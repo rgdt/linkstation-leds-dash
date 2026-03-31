@@ -1,0 +1,17 @@
+services:
+  lincstation-leds:
+    image: ghcr.io/${GITHUB_REPOSITORY:-nkine/linkstation-leds-dash}:latest
+    container_name: lincstation-leds
+    restart: unless-stopped
+    ports:
+      - "50001:50001"
+    devices:
+      # Adjust the host path to match your actual I2C bus number
+      - /dev/i2c-3:/dev/i2c-3
+    environment:
+      - I2C_BUS=3
+    volumes:
+      - lincstation-data:/app/data
+
+volumes:
+  lincstation-data:

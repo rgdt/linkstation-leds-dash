@@ -10,6 +10,7 @@ Port: 50001
 
 import copy
 import json
+import os
 import re
 import subprocess
 import threading
@@ -99,7 +100,13 @@ state: dict = {
 # ---------------------------------------------------------------------------
 
 def detect_i2c_bus() -> int | None:
-    """Scan I2C buses 0–9 for the LED controller at address 0x26."""
+    """Return I2C bus number. Checks I2C_BUS env var first, then auto-scans buses 0–9."""
+    env_bus = os.environ.get("I2C_BUS")
+    if env_bus is not None:
+        try:
+            return int(env_bus)
+        except ValueError:
+            print(f"  WARNING: I2C_BUS={env_bus!r} is not a valid integer, falling back to auto-detect")
     for bus in range(10):
         try:
             result = subprocess.run(
@@ -260,8 +267,11 @@ def get_system_stats() -> dict:
 # Flask application
 # ---------------------------------------------------------------------------
 
-STATIC_DIR   = Path(__file__).parent
-PRESETS_FILE = STATIC_DIR / "presets.json"
+STATIC_DIR = Path(__file__).parent
+DATA_DIR   = Path(os.environ.get("DATA_DIR", STATIC_DIR))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+PRESETS_FILE = DATA_DIR / "presets.json"
 
 # Presets — persisted to presets.json, loaded at startup
 presets: dict = {}
@@ -934,8 +944,8 @@ class EventEngine:
 # Automation config persistence
 # ---------------------------------------------------------------------------
 
-POLLER_CONFIG_FILE = STATIC_DIR / "poller_config.json"
-BINDINGS_FILE      = STATIC_DIR / "bindings.json"
+POLLER_CONFIG_FILE = DATA_DIR / "poller_config.json"
+BINDINGS_FILE      = DATA_DIR / "bindings.json"
 
 poller_config: dict = copy.deepcopy(POLLER_DEFAULTS)
 bindings: list      = []   # mutated in-place everywhere — EventEngine reads via bindings[:]
