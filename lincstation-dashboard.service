@@ -1,0 +1,22 @@
+[Unit]
+Description=LincStation LED Dashboard
+Documentation=https://github.com/ffalt/lincstation-led
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/mnt/flashpool/tools/linkstation-leds-dash
+ExecStart=/mnt/flashpool/tools/linkstation-leds-dash/venv/bin/python3 led_api.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lincstation-led
+
+# Ensure access to I2C devices
+SupplementaryGroups=i2c
+
+[Install]
+WantedBy=multi-user.target

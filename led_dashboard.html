@@ -1,0 +1,1755 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LincStation · LED Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    /* ── Reset & custom properties ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #05080f;
+      --bg2:          #080d18;
+      --bg3:          #0d1525;
+      --border:       #1b2640;
+      --cyan:         #29b6f6;
+      --cyan-dim:     rgba(41,182,246,.12);
+      --cyan-glow:    rgba(41,182,246,.45);
+      --green:        #66bb6a;
+      --green-dim:    rgba(102,187,106,.15);
+      --red:          #ef5350;
+      --red-dim:      rgba(239,83,80,.15);
+      --amber:        #ffa726;
+      --amber-dim:    rgba(255,167,38,.15);
+      --white-led:    #e8eaf6;
+      --text:         #cdd5e0;
+      --text-dim:     #44566a;
+      --font-ui:      'Rajdhani', sans-serif;
+      --font-mono:    'JetBrains Mono', monospace;
+      --r:            8px;
+      --r-sm:         4px;
+      --ease:         .18s ease;
+    }
+
+    html { font-size: 16px; scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ── Header ────────────────────────────────────────────────────────── */
+    .hdr {
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; gap: 1rem;
+      height: 54px; padding: 0 1.5rem;
+      background: rgba(5,8,15,.93);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .hdr-brand { display: flex; align-items: center; gap: .6rem; flex-shrink: 0; }
+
+    .hdr-logo {
+      width: 30px; height: 30px; border-radius: 7px; flex-shrink: 0;
+      background: linear-gradient(135deg, var(--cyan) 0%, #0077b6 100%);
+      display: flex; align-items: center; justify-content: center;
+      font-size: .8rem; font-weight: 700; color: #fff;
+      letter-spacing: -.5px;
+    }
+
+    .hdr-name {
+      font-size: 1.05rem; font-weight: 700;
+      letter-spacing: 1.5px; text-transform: uppercase;
+    }
+    .hdr-name em { color: var(--cyan); font-style: normal; }
+
+    .badge {
+      font-family: var(--font-mono); font-size: .6rem;
+      padding: 2px 8px; border-radius: 3px;
+      border: 1px solid var(--border);
+      color: var(--text-dim); background: var(--bg2);
+      letter-spacing: .8px; transition: var(--ease);
+    }
+    .badge.live {
+      border-color: var(--cyan); color: var(--cyan); background: var(--cyan-dim);
+    }
+
+    .sep { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }
+
+    .hdr-stats { display: flex; align-items: center; gap: .9rem; }
+    .hdr-stat {
+      display: flex; align-items: baseline; gap: .35rem;
+      font-family: var(--font-mono); font-size: .67rem;
+    }
+    .hdr-stat .lbl {
+      font-size: .58rem; text-transform: uppercase;
+      letter-spacing: .6px; color: var(--text-dim);
+    }
+    .hdr-stat .val { color: var(--text); font-weight: 600; }
+
+    .hdr-spacer { flex: 1; }
+
+    .lang-toggle {
+      display: flex; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden;
+    }
+    .lang-btn {
+      padding: 3px 10px; border: none; background: transparent;
+      font-family: var(--font-ui); font-size: .68rem; font-weight: 700;
+      letter-spacing: .5px; color: var(--text-dim); cursor: pointer;
+      transition: var(--ease);
+    }
+    .lang-btn.on { background: var(--cyan); color: #000; }
+
+    /* ── Main grid ─────────────────────────────────────────────────────── */
+    .main { max-width: 1160px; margin: 0 auto; padding: 1.5rem; display: grid; gap: 1.25rem; }
+
+    /* ── Card ──────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 1.25rem;
+    }
+
+    .card-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 1.2rem;
+    }
+
+    .card-title {
+      display: flex; align-items: center; gap: .5rem;
+      font-size: .72rem; font-weight: 700; letter-spacing: 2px;
+      text-transform: uppercase; color: var(--text-dim);
+    }
+    .card-title::before {
+      content: ''; display: inline-block; width: 5px; height: 5px;
+      border-radius: 50%; background: var(--cyan);
+      box-shadow: 0 0 6px var(--cyan);
+    }
+
+    .divider { height: 1px; background: var(--border); margin: 1rem 0; }
+
+    /* ── LED BAR ───────────────────────────────────────────────────────── */
+    .lb-layout {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start;
+    }
+
+    .lb-left { display: flex; flex-direction: column; gap: .85rem; }
+
+    /* Preview strip */
+    .lb-preview {
+      height: 42px; border-radius: 6px; border: 1px solid var(--border);
+      background: #000; position: relative; overflow: hidden;
+      transition: box-shadow .3s;
+    }
+    /* Specular sheen */
+    .lb-preview::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(to bottom, rgba(255,255,255,.07) 0%, transparent 55%);
+      pointer-events: none; border-radius: inherit;
+    }
+
+    /* Mode buttons */
+    .mode-btns { display: flex; gap: .4rem; }
+    .mode-btn {
+      flex: 1; padding: 5px 0; font-family: var(--font-ui);
+      font-size: .72rem; font-weight: 600; letter-spacing: .4px;
+      text-align: center; border: 1px solid var(--border);
+      border-radius: var(--r-sm); background: var(--bg3);
+      color: var(--text-dim); cursor: pointer; transition: var(--ease);
+    }
+    .mode-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+    .mode-btn.on { background: var(--cyan-dim); border-color: var(--cyan); color: var(--cyan); }
+
+    /* Brightness */
+    .bright-row { display: flex; align-items: center; gap: .6rem; }
+    .bright-lbl {
+      font-size: .64rem; text-transform: uppercase; letter-spacing: .8px;
+      color: var(--text-dim); white-space: nowrap; flex-shrink: 0;
+    }
+    .bright-slider {
+      flex: 1; -webkit-appearance: none;
+      height: 4px; border-radius: 2px;
+      background: linear-gradient(to right, var(--cyan) var(--pct, 78%), var(--bg3) var(--pct, 78%));
+      outline: none; cursor: pointer; border: none;
+    }
+    .bright-slider::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+      background: var(--cyan); box-shadow: 0 0 8px var(--cyan-glow); cursor: pointer;
+    }
+    .bright-val {
+      font-family: var(--font-mono); font-size: .7rem;
+      color: var(--cyan); width: 30px; text-align: right; flex-shrink: 0;
+    }
+
+    /* Color pickers */
+    .lb-right { display: flex; flex-direction: column; gap: .8rem; }
+
+    .color-row { display: flex; align-items: center; gap: .75rem; }
+    .color-lbl {
+      font-size: .65rem; text-transform: uppercase; letter-spacing: .5px;
+      color: var(--text-dim); width: 82px; flex-shrink: 0;
+    }
+    .cp-wrap {
+      width: 34px; height: 22px; border-radius: var(--r-sm);
+      border: 1px solid var(--border); overflow: hidden; position: relative;
+      cursor: pointer; flex-shrink: 0;
+    }
+    .cp-wrap input[type="color"] {
+      position: absolute; inset: -3px; width: calc(100% + 6px);
+      height: calc(100% + 6px); border: none; padding: 0; cursor: pointer;
+    }
+    .color-hex {
+      font-family: var(--font-mono); font-size: .65rem;
+      color: var(--text-dim); letter-spacing: .3px;
+    }
+
+    /* ── Front panel ───────────────────────────────────────────────────── */
+    .panel-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem;
+    }
+
+    .bay {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: var(--r); padding: .85rem .6rem;
+      display: flex; flex-direction: column; align-items: center;
+      gap: .55rem; transition: border-color var(--ease), box-shadow var(--ease);
+      position: relative;
+    }
+
+    .bay.s-white { border-color: rgba(232,234,246,.45); box-shadow: 0 0 14px rgba(232,234,246,.08); }
+    .bay.s-red   { border-color: var(--red);   box-shadow: 0 0 14px var(--red-dim); }
+    .bay.s-blink { border-color: var(--amber);  animation: bay-pulse .85s ease-in-out infinite; }
+
+    @keyframes bay-pulse {
+      0%,100% { box-shadow: 0 0 6px var(--amber-dim); }
+      50%      { box-shadow: 0 0 18px rgba(255,167,38,.35); }
+    }
+
+    .bay-icon { width: 28px; height: 20px; opacity: .55; }
+    .bay-icon svg { width: 100%; height: 100%; display: block; }
+
+    .bay-name {
+      font-size: .65rem; font-weight: 700; letter-spacing: 1.2px;
+      text-transform: uppercase; color: var(--text-dim);
+    }
+
+    /* LED dot */
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #111827; border: 1px solid var(--border); transition: all .25s;
+    }
+    .dot.white {
+      background: var(--white-led); border-color: var(--white-led);
+      box-shadow: 0 0 5px var(--white-led), 0 0 10px rgba(232,234,246,.55);
+    }
+    .dot.red {
+      background: var(--red); border-color: var(--red);
+      box-shadow: 0 0 5px var(--red), 0 0 10px rgba(239,83,80,.5);
+    }
+    .dot.blink {
+      background: var(--amber); border-color: var(--amber);
+      animation: dot-blink .85s ease-in-out infinite;
+    }
+    @keyframes dot-blink {
+      0%,100% { opacity: 1; box-shadow: 0 0 5px var(--amber); }
+      50%      { opacity: .1; box-shadow: none; }
+    }
+
+    /* Bay state buttons */
+    .bay-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; width: 100%; }
+    .bay-btn {
+      padding: 3px 0; font-family: var(--font-ui); font-size: .58rem;
+      font-weight: 700; letter-spacing: .4px; text-transform: uppercase;
+      text-align: center; border: 1px solid var(--border);
+      border-radius: 3px; background: var(--bg); color: var(--text-dim);
+      cursor: pointer; transition: var(--ease);
+    }
+    .bay-btn:hover { color: var(--text); border-color: #2a3856; }
+    .bay-btn.sel-white { background: rgba(232,234,246,.1); border-color: var(--white-led); color: var(--white-led); }
+    .bay-btn.sel-red   { background: var(--red-dim);   border-color: var(--red);       color: var(--red); }
+    .bay-btn.sel-blink { background: var(--amber-dim); border-color: var(--amber);     color: var(--amber); }
+    .bay-btn.sel-off   { background: var(--cyan-dim);  border-color: var(--cyan);      color: var(--cyan); }
+
+    /* ── Quick actions & Presets ───────────────────────────────────────── */
+    .actions { display: flex; flex-direction: column; gap: .55rem; }
+
+    .act-btn {
+      display: flex; align-items: center; gap: .6rem;
+      padding: 8px 14px; font-family: var(--font-ui); font-size: .8rem;
+      font-weight: 600; letter-spacing: .4px; border: 1px solid var(--border);
+      border-radius: var(--r-sm); background: var(--bg3);
+      color: var(--text); cursor: pointer; transition: var(--ease);
+    }
+    .act-btn:hover:not(:disabled) { border-color: var(--red); color: var(--red); background: var(--red-dim); }
+    .act-btn:disabled { opacity: .38; cursor: not-allowed; }
+    .act-btn .act-ico { font-size: 1em; }
+    .act-btn.primary { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-dim); }
+    .act-btn.primary:hover:not(:disabled) { background: rgba(41,182,246,.22); border-color: var(--cyan); color: var(--cyan); }
+
+    .preset-save { display: flex; gap: .4rem; margin-bottom: .7rem; }
+    .preset-input {
+      flex: 1; min-width: 0; padding: 5px 9px;
+      font-family: var(--font-mono); font-size: .7rem;
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: var(--r-sm); color: var(--text); outline: none;
+      transition: border-color var(--ease);
+    }
+    .preset-input:focus { border-color: var(--cyan); }
+    .preset-input::placeholder { color: var(--text-dim); }
+
+    .preset-list { display: flex; flex-direction: column; gap: .3rem; min-height: 24px; }
+    .preset-empty { font-size: .67rem; color: var(--text-dim); font-style: italic; padding: .1rem 0; }
+    .preset-item {
+      display: flex; align-items: center; gap: .35rem;
+      padding: 5px 8px; border: 1px solid var(--border);
+      border-radius: var(--r-sm); background: var(--bg);
+      transition: border-color var(--ease);
+    }
+    .preset-item:hover { border-color: #2a3856; }
+    .preset-apply {
+      flex: 1; font-family: var(--font-mono); font-size: .68rem; color: var(--text);
+      background: none; border: none; text-align: left; cursor: pointer;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      padding: 0; transition: color var(--ease);
+    }
+    .preset-apply:hover { color: var(--cyan); }
+    .preset-del {
+      flex-shrink: 0; width: 18px; height: 18px; border: none; border-radius: 3px;
+      background: transparent; color: var(--text-dim); cursor: pointer; font-size: .7rem;
+      display: flex; align-items: center; justify-content: center;
+      transition: var(--ease);
+    }
+    .preset-del:hover { background: var(--red-dim); color: var(--red); }
+
+    /* ── System stats ──────────────────────────────────────────────────── */
+    .sys-top { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: .8rem; }
+    .sys-item { display: flex; flex-direction: column; gap: .3rem; }
+    .sys-row  { display: flex; justify-content: space-between; align-items: baseline; }
+    .sys-lbl  {
+      font-size: .65rem; font-weight: 700; letter-spacing: 1.2px;
+      text-transform: uppercase; color: var(--text-dim);
+    }
+    .sys-val  { font-family: var(--font-mono); font-size: .7rem; color: var(--cyan); }
+
+    .bar { height: 4px; background: var(--bg3); border-radius: 2px; overflow: hidden; border: 1px solid var(--border); }
+    .bar-fill { height: 100%; border-radius: 2px; background: var(--cyan); transition: width .6s ease; }
+    .bar-fill.warn { background: var(--amber); }
+    .bar-fill.crit { background: var(--red); }
+
+    .disk-list { display: flex; flex-direction: column; gap: .55rem; }
+    .disk-row {
+      display: grid; grid-template-columns: 90px 1fr 48px;
+      align-items: center; gap: .5rem;
+    }
+    .disk-mp {
+      font-family: var(--font-mono); font-size: .6rem; color: var(--text-dim);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* ── Bottom two-col ────────────────────────────────────────────────── */
+    .bot-grid { display: grid; grid-template-columns: 290px 1fr; gap: 1.25rem; align-items: start; }
+
+    /* ── Toast ─────────────────────────────────────────────────────────── */
+    .toasts {
+      position: fixed; bottom: 1.25rem; right: 1.25rem; z-index: 200;
+      display: flex; flex-direction: column; gap: .4rem; pointer-events: none;
+    }
+    .toast {
+      display: flex; align-items: center; gap: .55rem;
+      padding: 9px 14px; min-width: 200px;
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: var(--r); font-size: .78rem; font-weight: 500;
+      box-shadow: 0 4px 24px rgba(0,0,0,.5);
+      animation: t-in .2s ease; pointer-events: auto;
+    }
+    .toast.ok    { border-color: var(--green); }
+    .toast.error { border-color: var(--red); }
+    .t-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .toast.ok    .t-dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .toast.error .t-dot { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+    @keyframes t-in  { from { opacity: 0; transform: translateX(16px); } to   { opacity: 1; transform: none; } }
+    @keyframes t-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(16px); } }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────────────── -->
+<header class="hdr">
+  <div class="hdr-brand">
+    <div class="hdr-logo">LS</div>
+    <div class="hdr-name">LincStation <em>N2</em></div>
+  </div>
+
+  <span id="bus-badge" class="badge">I2C ···</span>
+
+  <div class="sep"></div>
+
+  <div class="hdr-stats">
+    <div class="hdr-stat">
+      <span class="lbl">CPU</span>
+      <span class="val" id="h-cpu">—</span>
+    </div>
+    <div class="sep"></div>
+    <div class="hdr-stat">
+      <span class="lbl">RAM</span>
+      <span class="val" id="h-ram">—</span>
+    </div>
+  </div>
+
+  <div class="hdr-spacer"></div>
+
+  <div class="lang-toggle">
+    <button class="lang-btn on" onclick="setLang('fr')">FR</button>
+    <button class="lang-btn"   onclick="setLang('en')">EN</button>
+  </div>
+</header>
+
+<!-- ── Main ────────────────────────────────────────────────────────────── -->
+<main class="main">
+
+  <!-- LED BAR ─────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-hdr">
+      <div class="card-title" data-i18n="lb_title">Barre LED frontale</div>
+    </div>
+    <div class="lb-layout">
+
+      <div class="lb-left">
+        <div class="lb-preview" id="lb-preview"></div>
+
+        <div class="mode-btns">
+          <button class="mode-btn on" id="mb-solid"  onclick="setMode('solid')"  data-i18n="solid">Fixe</button>
+          <button class="mode-btn"    id="mb-breath" onclick="setMode('breath')" data-i18n="breath">Respiration</button>
+          <button class="mode-btn"    id="mb-loop"   onclick="setMode('loop')"   data-i18n="loop">Dégradé</button>
+        </div>
+
+        <div class="bright-row">
+          <span class="bright-lbl" data-i18n="brightness">Luminosité</span>
+          <input type="range" class="bright-slider" id="bright-slider"
+            min="0" max="255" value="200"
+            oninput="onBright(this.value)"
+            onchange="sendLedbar()">
+          <span class="bright-val" id="bright-val">200</span>
+        </div>
+      </div>
+
+      <div class="lb-right" id="lb-right">
+        <!-- Solid / Breath picker -->
+        <div id="cp-solid">
+          <div class="color-row">
+            <span class="color-lbl" data-i18n="color">Couleur</span>
+            <div class="cp-wrap">
+              <input type="color" id="cp-color" value="#00c8ff"
+                oninput="onSolidColor(this.value)" onchange="sendLedbar()">
+            </div>
+            <span class="color-hex" id="cp-color-hex">#00C8FF</span>
+          </div>
+        </div>
+
+        <!-- Loop pickers -->
+        <div id="cp-loop" style="display:none;flex-direction:column;gap:.8rem">
+          <div class="color-row">
+            <span class="color-lbl" data-i18n="color1">Couleur 1</span>
+            <div class="cp-wrap">
+              <input type="color" id="cp-loop1" value="#ff3200"
+                oninput="onLoopColors()" onchange="sendLedbar()">
+            </div>
+            <span class="color-hex" id="cp-loop1-hex">#FF3200</span>
+          </div>
+          <div class="color-row">
+            <span class="color-lbl" data-i18n="color2">Couleur 2</span>
+            <div class="cp-wrap">
+              <input type="color" id="cp-loop2" value="#0064ff"
+                oninput="onLoopColors()" onchange="sendLedbar()">
+            </div>
+            <span class="color-hex" id="cp-loop2-hex">#0064FF</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- FRONT PANEL ─────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-hdr">
+      <div class="card-title" data-i18n="panel_title">Panneau avant</div>
+    </div>
+    <div class="panel-grid" id="panel-grid">
+      <!-- Injected by JS -->
+    </div>
+  </div>
+
+  <!-- BOTTOM ROW ──────────────────────────────────────────── -->
+  <div class="bot-grid">
+
+    <!-- Presets & Actions -->
+    <div class="card">
+      <div class="card-hdr">
+        <div class="card-title" data-i18n="presets_title">Presets</div>
+      </div>
+
+      <!-- Save current state -->
+      <div class="preset-save">
+        <input type="text" id="preset-name" class="preset-input"
+          data-i18n-placeholder="preset_ph" placeholder="Nom du preset…"
+          onkeydown="if(event.key==='Enter') savePreset()">
+        <button class="act-btn primary" onclick="savePreset()" data-i18n="save">Sauvegarder</button>
+      </div>
+
+      <!-- Preset list -->
+      <div id="preset-list" class="preset-list">
+        <div class="preset-empty" data-i18n="no_presets">Aucun preset sauvegardé</div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="actions">
+        <button class="act-btn" onclick="allOff()">
+          <span class="act-ico">⬛</span>
+          <span data-i18n="all_off">Tout éteindre</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- System stats -->
+    <div class="card">
+      <div class="card-hdr">
+        <div class="card-title" data-i18n="sys_title">Système</div>
+      </div>
+
+      <div class="sys-top">
+        <div class="sys-item">
+          <div class="sys-row">
+            <span class="sys-lbl">CPU</span>
+            <span class="sys-val" id="s-cpu">—</span>
+          </div>
+          <div class="bar"><div class="bar-fill" id="b-cpu" style="width:0"></div></div>
+        </div>
+        <div class="sys-item">
+          <div class="sys-row">
+            <span class="sys-lbl">RAM</span>
+            <span class="sys-val" id="s-ram">—</span>
+          </div>
+          <div class="bar"><div class="bar-fill" id="b-ram" style="width:0"></div></div>
+        </div>
+      </div>
+
+      <div class="divider" style="margin:.6rem 0"></div>
+      <div class="disk-list" id="disk-list">
+        <div style="font-size:.68rem;color:var(--text-dim)" data-i18n="loading">Chargement…</div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<!-- Toasts -->
+<!-- ── AUTOMATIONS ───────────────────────────────────────────────────────── -->
+<style>
+  /* Automations card */
+  .auto-section { margin-bottom: 1rem; }
+  .auto-section-hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: .65rem;
+  }
+  .auto-section-title {
+    font-size: .67rem; font-weight: 700; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--text-dim);
+  }
+  .auto-cols { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem 1.5rem; }
+
+  /* Threshold rows */
+  .thr-row { display: flex; align-items: center; gap: .5rem; }
+  .thr-lbl {
+    width: 90px; flex-shrink: 0; font-size: .64rem; text-transform: uppercase;
+    letter-spacing: .5px; color: var(--text-dim);
+  }
+  .thr-slider {
+    flex: 1; -webkit-appearance: none; height: 3px; border-radius: 2px;
+    background: var(--bg3); border: 1px solid var(--border); outline: none; cursor: pointer;
+  }
+  .thr-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--cyan); cursor: pointer;
+  }
+  .thr-val {
+    font-family: var(--font-mono); font-size: .65rem; color: var(--cyan);
+    width: 44px; text-align: right; flex-shrink: 0;
+  }
+
+  /* Binding list */
+  .binding-list { display: flex; flex-direction: column; gap: .35rem; }
+  .binding-row {
+    display: flex; align-items: center; gap: .5rem;
+    padding: 6px 10px; border: 1px solid var(--border);
+    border-radius: var(--r-sm); background: var(--bg3);
+    transition: border-color var(--ease);
+  }
+  .binding-row:hover { border-color: #253050; }
+  .binding-row.disabled { opacity: .45; }
+  .binding-toggle {
+    width: 28px; height: 16px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--bg); position: relative; cursor: pointer; flex-shrink: 0;
+    transition: background var(--ease), border-color var(--ease);
+  }
+  .binding-toggle.on { background: var(--cyan); border-color: var(--cyan); }
+  .binding-toggle::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 10px; height: 10px; border-radius: 50%; background: var(--text-dim);
+    transition: transform var(--ease), background var(--ease);
+  }
+  .binding-toggle.on::after { transform: translateX(12px); background: #000; }
+  .binding-info { flex: 1; min-width: 0; }
+  .binding-main {
+    font-family: var(--font-mono); font-size: .66rem; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .binding-sub {
+    font-size: .6rem; color: var(--text-dim); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .prio-badge {
+    font-family: var(--font-mono); font-size: .58rem; padding: 1px 5px;
+    border-radius: 3px; border: 1px solid var(--border); color: var(--text-dim);
+    flex-shrink: 0;
+  }
+  .binding-edit, .binding-del {
+    width: 22px; height: 22px; border: none; border-radius: 3px;
+    background: transparent; cursor: pointer; font-size: .7rem;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-dim); transition: var(--ease); flex-shrink: 0;
+  }
+  .binding-edit:hover { background: var(--cyan-dim); color: var(--cyan); }
+  .binding-del:hover  { background: var(--red-dim);  color: var(--red); }
+
+  /* Binding form */
+  .binding-form {
+    border: 1px solid var(--border); border-radius: var(--r);
+    background: var(--bg3); padding: .9rem;
+    display: flex; flex-direction: column; gap: .6rem; margin-top: .5rem;
+  }
+  .form-row { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+  .form-lbl {
+    width: 72px; flex-shrink: 0; font-size: .64rem; text-transform: uppercase;
+    letter-spacing: .5px; color: var(--text-dim);
+  }
+  .form-select, .form-input {
+    flex: 1; min-width: 100px; padding: 5px 8px;
+    font-family: var(--font-mono); font-size: .7rem;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--r-sm); color: var(--text); outline: none;
+    transition: border-color var(--ease);
+  }
+  .form-select:focus, .form-input:focus { border-color: var(--cyan); }
+  .form-select option { background: var(--bg2); }
+  .strip-checks {
+    display: flex; flex-wrap: wrap; gap: .3rem; flex: 1;
+  }
+  .strip-check {
+    display: flex; align-items: center; gap: .2rem; cursor: pointer;
+    font-family: var(--font-mono); font-size: .62rem; color: var(--text-dim);
+    padding: 2px 6px; border: 1px solid var(--border); border-radius: 3px;
+    background: var(--bg); transition: var(--ease); user-select: none;
+  }
+  .strip-check.checked { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-dim); }
+  .strip-check input { display: none; }
+  .strip-check.ledbar-check { border-color: var(--cyan); font-style: italic; }
+  .strip-check.ledbar-check.checked { background: rgba(41,182,246,.18); border-color: var(--cyan); color: var(--cyan); }
+  .form-btns { display: flex; gap: .5rem; justify-content: flex-end; }
+
+  /* Active animations */
+  .active-list { display: flex; flex-wrap: wrap; gap: .35rem; min-height: 22px; }
+  .active-tag {
+    font-family: var(--font-mono); font-size: .6rem; padding: 2px 8px;
+    border: 1px solid var(--amber); color: var(--amber);
+    background: var(--amber-dim); border-radius: 3px;
+    animation: tag-pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes tag-pulse {
+    0%,100% { opacity: 1; } 50% { opacity: .55; }
+  }
+  .active-empty { font-size: .67rem; color: var(--text-dim); font-style: italic; }
+</style>
+
+<div style="max-width:1160px;margin:0 auto;padding:0 1.5rem 1.5rem">
+<div class="card">
+  <div class="card-hdr">
+    <div class="card-title" data-i18n="auto_title">Automations</div>
+    <div style="display:flex;align-items:center;gap:.6rem">
+      <span id="auto-active-badge" class="badge">0 actives</span>
+      <button class="act-btn" style="padding:3px 10px;font-size:.68rem"
+        onclick="stopAllAnimations()" data-i18n="stop_all">⬛ Stop</button>
+    </div>
+  </div>
+
+  <!-- POLLER CONFIG ─────────────────────────────────────── -->
+  <div class="auto-section">
+    <div class="auto-section-hdr">
+      <span class="auto-section-title" data-i18n="poller_title">Metric Poller</span>
+      <div style="display:flex;align-items:center;gap:.75rem">
+        <div class="thr-row" style="gap:.5rem">
+          <span class="thr-lbl" data-i18n="interval">Intervalle</span>
+          <input type="range" class="thr-slider" id="poller-interval"
+            min="500" max="30000" step="500" value="2000"
+            oninput="document.getElementById('poller-interval-val').textContent=fmtMs(+this.value)">
+          <span class="thr-val" id="poller-interval-val">2.0s</span>
+        </div>
+        <button class="act-btn primary" style="padding:3px 10px;font-size:.68rem"
+          onclick="savePollerConfig()" data-i18n="apply">Appliquer</button>
+        <div id="poller-toggle" class="binding-toggle on" onclick="togglePoller()"
+          title="Enable/disable poller"></div>
+      </div>
+    </div>
+
+    <div class="auto-cols">
+      <div class="thr-row">
+        <span class="thr-lbl" data-i18n="thr_net_in">Net in</span>
+        <input type="range" class="thr-slider" id="thr-net-in"
+          min="0.5" max="100" step="0.5" value="5"
+          oninput="document.getElementById('thr-net-in-val').textContent=this.value+' MB/s'">
+        <span class="thr-val" id="thr-net-in-val">5 MB/s</span>
+      </div>
+      <div class="thr-row">
+        <span class="thr-lbl" data-i18n="thr_net_out">Net out</span>
+        <input type="range" class="thr-slider" id="thr-net-out"
+          min="0.5" max="100" step="0.5" value="5"
+          oninput="document.getElementById('thr-net-out-val').textContent=this.value+' MB/s'">
+        <span class="thr-val" id="thr-net-out-val">5 MB/s</span>
+      </div>
+      <div class="thr-row">
+        <span class="thr-lbl" data-i18n="thr_cpu">CPU</span>
+        <input type="range" class="thr-slider" id="thr-cpu"
+          min="10" max="100" step="5" value="80"
+          oninput="document.getElementById('thr-cpu-val').textContent=this.value+'%'">
+        <span class="thr-val" id="thr-cpu-val">80%</span>
+      </div>
+      <div class="thr-row">
+        <span class="thr-lbl" data-i18n="thr_cpu_sus">CPU sustain</span>
+        <input type="range" class="thr-slider" id="thr-cpu-sus"
+          min="0" max="60" step="1" value="10"
+          oninput="document.getElementById('thr-cpu-sus-val').textContent=this.value+'s'">
+        <span class="thr-val" id="thr-cpu-sus-val">10s</span>
+      </div>
+      <div class="thr-row">
+        <span class="thr-lbl" data-i18n="thr_ram">RAM</span>
+        <input type="range" class="thr-slider" id="thr-ram"
+          min="10" max="100" step="5" value="85"
+          oninput="document.getElementById('thr-ram-val').textContent=this.value+'%'">
+        <span class="thr-val" id="thr-ram-val">85%</span>
+      </div>
+      <div class="thr-row">
+        <span class="thr-lbl" data-i18n="thr_disk">Disk I/O</span>
+        <input type="range" class="thr-slider" id="thr-disk"
+          min="1" max="500" step="1" value="50"
+          oninput="document.getElementById('thr-disk-val').textContent=this.value+' MB/s'">
+        <span class="thr-val" id="thr-disk-val">50 MB/s</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ACTIVE ANIMATIONS ────────────────────────────────── -->
+  <div class="auto-section">
+    <div class="auto-section-hdr">
+      <span class="auto-section-title" data-i18n="active_title">Actives</span>
+    </div>
+    <div class="active-list" id="active-list">
+      <span class="active-empty" data-i18n="none_active">Aucune animation en cours</span>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- BINDINGS ─────────────────────────────────────────── -->
+  <div class="auto-section">
+    <div class="auto-section-hdr">
+      <span class="auto-section-title" data-i18n="bindings_title">Règles</span>
+      <button class="act-btn primary" style="padding:3px 10px;font-size:.68rem"
+        onclick="showBindingForm()" data-i18n="add_binding">+ Ajouter</button>
+    </div>
+    <div class="binding-list" id="binding-list">
+      <span class="active-empty" data-i18n="no_bindings">Aucune règle configurée</span>
+    </div>
+    <!-- Add / Edit form -->
+    <div class="binding-form" id="binding-form" style="display:none">
+      <div class="form-row">
+        <span class="form-lbl" data-i18n="f_label">Label</span>
+        <input type="text" class="form-input" id="f-label" placeholder="ex: CPU fort">
+      </div>
+      <div class="form-row">
+        <span class="form-lbl" data-i18n="f_event">Événement</span>
+        <select class="form-select" id="f-event"></select>
+      </div>
+      <div class="form-row">
+        <span class="form-lbl" data-i18n="f_anim">Animation</span>
+        <select class="form-select" id="f-anim" onchange="renderParamInputs()"></select>
+      </div>
+      <!-- Dynamic param inputs rendered here -->
+      <div id="f-params-area"></div>
+      <div class="form-row">
+        <span class="form-lbl" data-i18n="f_targets">Strips</span>
+        <div class="strip-checks" id="f-strips"></div>
+      </div>
+      <div class="form-row">
+        <span class="form-lbl" data-i18n="f_priority">Priorité</span>
+        <input type="number" class="form-input" id="f-priority" value="5" min="1" max="20" style="max-width:70px">
+      </div>
+      <div class="form-row">
+        <span class="form-lbl" data-i18n="f_onexit">On exit</span>
+        <select class="form-select" id="f-onexit" onchange="renderOnExitExtra()" style="max-width:130px">
+          <option value="off">Off</option>
+          <option value="static">Static</option>
+          <option value="preset">Preset</option>
+        </select>
+        <div id="f-onexit-extra" style="display:none;flex:1"></div>
+      </div>
+      <div class="form-btns">
+        <button class="act-btn" onclick="hideBindingForm()" data-i18n="cancel">Annuler</button>
+        <button class="act-btn primary" onclick="saveBinding()" data-i18n="f_save">Sauvegarder</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   Automation — metadata from server
+═══════════════════════════════════════════════════════════════════════════ */
+let _autoMeta = { animations: {}, events: [], strips: [] };
+let _bindings = [];
+let _editingId = null;
+
+function fmtMs(ms) {
+  return ms >= 1000 ? (ms / 1000).toFixed(ms % 1000 === 0 ? 0 : 1) + 's' : ms + 'ms';
+}
+
+/* ── Poller config ─────────────────────────────────────────────────────── */
+
+function loadPollerConfig() {
+  api('GET', '/api/poller/config').then(cfg => applyPollerConfig(cfg)).catch(() => {});
+}
+
+function applyPollerConfig(cfg) {
+  const iv = cfg.interval_ms || 2000;
+  document.getElementById('poller-interval').value = iv;
+  document.getElementById('poller-interval-val').textContent = fmtMs(iv);
+  document.getElementById('poller-toggle').classList.toggle('on', cfg.enabled !== false);
+
+  const thr = cfg.thresholds || {};
+  const set = (id, valId, v, suffix) => {
+    const el = document.getElementById(id);
+    if (el) { el.value = v; document.getElementById(valId).textContent = v + suffix; }
+  };
+  set('thr-net-in',  'thr-net-in-val',  thr.net_in_mbps        ?? 5,   ' MB/s');
+  set('thr-net-out', 'thr-net-out-val', thr.net_out_mbps       ?? 5,   ' MB/s');
+  set('thr-cpu',     'thr-cpu-val',     thr.cpu_percent        ?? 80,  '%');
+  set('thr-cpu-sus', 'thr-cpu-sus-val', thr.cpu_sustained_secs ?? 10,  's');
+  set('thr-ram',     'thr-ram-val',     thr.ram_percent        ?? 85,  '%');
+  set('thr-disk',    'thr-disk-val',    thr.disk_io_mbps       ?? 50,  ' MB/s');
+}
+
+function savePollerConfig() {
+  const cfg = {
+    interval_ms: +document.getElementById('poller-interval').value,
+    enabled:     document.getElementById('poller-toggle').classList.contains('on'),
+    thresholds: {
+      net_in_mbps:        +document.getElementById('thr-net-in').value,
+      net_out_mbps:       +document.getElementById('thr-net-out').value,
+      cpu_percent:        +document.getElementById('thr-cpu').value,
+      cpu_sustained_secs: +document.getElementById('thr-cpu-sus').value,
+      ram_percent:        +document.getElementById('thr-ram').value,
+      disk_io_mbps:       +document.getElementById('thr-disk').value,
+    },
+  };
+  api('POST', '/api/poller/config', cfg)
+    .then(() => toast(T[lang].ok, 'ok'))
+    .catch(() => toast(T[lang].err, 'error'));
+}
+
+function togglePoller() {
+  const el = document.getElementById('poller-toggle');
+  el.classList.toggle('on');
+  api('POST', '/api/poller/config', { enabled: el.classList.contains('on') })
+    .then(() => toast(T[lang].ok, 'ok'))
+    .catch(() => toast(T[lang].err, 'error'));
+}
+
+/* ── Bindings ──────────────────────────────────────────────────────────── */
+
+function loadBindings() {
+  api('GET', '/api/binding').then(d => {
+    _autoMeta.animations = d.animations || {};
+    _autoMeta.events     = d.events     || [];
+    _autoMeta.strips     = d.strips     || [];
+    _bindings = d.bindings || [];
+    renderBindings();
+    populateFormSelects();
+  }).catch(() => {});
+}
+
+function renderBindings() {
+  const list = document.getElementById('binding-list');
+  if (!_bindings.length) {
+    list.innerHTML = `<span class="active-empty" data-i18n="no_bindings">${T[lang].no_bindings||'Aucune règle configurée'}</span>`;
+    return;
+  }
+  list.innerHTML = _bindings.map(b => {
+    const label   = b.label || `${b.event} → ${b.animation}`;
+    const targets = b.targets.length === Object.keys(_autoMeta.strips).length
+      ? 'all' : b.targets.join(',');
+    return `
+    <div class="binding-row${b.enabled ? '' : ' disabled'}" id="br-${b.id}">
+      <div class="binding-toggle${b.enabled ? ' on' : ''}"
+        onclick="toggleBinding('${b.id}')"></div>
+      <div class="binding-info">
+        <div class="binding-main">${label}</div>
+        <div class="binding-sub">${b.animation} · [${targets}]</div>
+      </div>
+      <span class="prio-badge">p${b.priority}</span>
+      <button class="binding-edit" onclick="showBindingForm('${b.id}')">✎</button>
+      <button class="binding-del"  onclick="deleteBinding('${b.id}')">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function toggleBinding(id) {
+  const b = _bindings.find(x => x.id === id);
+  if (!b) return;
+  b.enabled = !b.enabled;
+  api('PUT', `/api/binding/${id}`, b)
+    .then(() => renderBindings())
+    .catch(() => toast(T[lang].err, 'error'));
+}
+
+function deleteBinding(id) {
+  api('DELETE', `/api/binding/${id}`)
+    .then(() => { _bindings = _bindings.filter(b => b.id !== id); renderBindings(); })
+    .catch(() => toast(T[lang].err, 'error'));
+}
+
+/* ── Binding form ──────────────────────────────────────────────────────── */
+
+// Strip animation params
+const PARAM_DEFS = {
+  direction:   { type:'select', opts:['ltr','rtl'],            label:'Direction' },
+  color:       { type:'select', opts:['white','red','blink'],   label:'Couleur' },
+  color_a:     { type:'select', opts:['white','red','blink'],   label:'Couleur A' },
+  color_b:     { type:'select', opts:['white','red','blink'],   label:'Couleur B' },
+  speed_ms:    { type:'range',  min:50,  max:1000, step:50,    label:'Vitesse (ms)', suffix:'ms' },
+  on_ms:       { type:'range',  min:50,  max:2000, step:50,    label:'On (ms)',      suffix:'ms' },
+  off_ms:      { type:'range',  min:50,  max:2000, step:50,    label:'Off (ms)',     suffix:'ms' },
+  tail:        { type:'range',  min:0,   max:4,    step:1,     label:'Traîne' },
+  fill_pct:    { type:'range',  min:0,   max:100,  step:5,     label:'Remplissage',  suffix:'%' },
+  step:        { type:'range',  min:1,   max:4,    step:1,     label:'Pas' },
+};
+// LED BAR animation params (color values are [R,G,B] arrays → color picker)
+const PARAM_DEFS_LEDBAR = {
+  brightness:  { type:'range',     min:0,  max:255, step:5,   label:'Luminosité' },
+  color:       { type:'rgb_array',                             label:'Couleur' },
+  loop_color1: { type:'rgb_array',                             label:'Couleur 1' },
+  loop_color2: { type:'rgb_array',                             label:'Couleur 2' },
+  on_ms:       { type:'range',     min:50, max:2000, step:50,  label:'On (ms)',   suffix:'ms' },
+  off_ms:      { type:'range',     min:50, max:2000, step:50,  label:'Off (ms)',  suffix:'ms' },
+};
+
+function isLedbarAnim(name) { return name && name.startsWith('ledbar_'); }
+
+function renderParamInputs() {
+  const anim    = document.getElementById('f-anim').value;
+  const meta    = _autoMeta.animations[anim];
+  const area    = document.getElementById('f-params-area');
+  const editing = _editingId ? _bindings.find(b => b.id === _editingId) : null;
+  if (!meta) { area.innerHTML = ''; return; }
+
+  const defs = isLedbarAnim(anim) ? PARAM_DEFS_LEDBAR : PARAM_DEFS;
+
+  area.innerHTML = Object.entries(meta.defaults).map(([key, defVal]) => {
+    const def = defs[key];
+    if (!def) return '';
+    const val = editing?.params?.[key] ?? defVal;
+    const id  = `fp-${key}`;
+
+    if (def.type === 'select') {
+      const opts = def.opts.map(o => `<option value="${o}"${o==val?' selected':''}>${o}</option>`).join('');
+      return `<div class="form-row">
+        <span class="form-lbl">${def.label}</span>
+        <select class="form-select" id="${id}" style="max-width:120px">${opts}</select>
+      </div>`;
+    }
+    if (def.type === 'rgb_array') {
+      const hexVal = Array.isArray(val) ? rgb2hex(val) : (val || '#00c8ff');
+      return `<div class="form-row">
+        <span class="form-lbl">${def.label}</span>
+        <div class="cp-wrap"><input type="color" id="${id}" value="${hexVal}"
+          oninput="document.getElementById('${id}-v').textContent=this.value.toUpperCase()">
+        </div>
+        <span class="color-hex" id="${id}-v">${hexVal.toUpperCase()}</span>
+      </div>`;
+    }
+    const suf = def.suffix || '';
+    return `<div class="form-row">
+      <span class="form-lbl">${def.label}</span>
+      <input type="range" class="thr-slider" id="${id}"
+        min="${def.min}" max="${def.max}" step="${def.step}" value="${val}"
+        oninput="document.getElementById('${id}-v').textContent=this.value+'${suf}'" style="flex:1">
+      <span class="thr-val" id="${id}-v">${val}${suf}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderOnExitExtra() {
+  const type = document.getElementById('f-onexit').value;
+  const area = document.getElementById('f-onexit-extra');
+  if (type === 'static') {
+    area.style.display = 'block';
+    area.innerHTML = `<select class="form-select" id="foe-static">
+      <option value="white">white</option><option value="red">red</option><option value="off">off</option>
+    </select>`;
+  } else if (type === 'preset') {
+    area.style.display = 'block';
+    const opts = _presets.map(n => `<option value="${n}">${n}</option>`).join('');
+    area.innerHTML = `<select class="form-select" id="foe-preset">${opts || '<option>—</option>'}</select>`;
+  } else {
+    area.style.display = 'none';
+    area.innerHTML = '';
+  }
+}
+
+function populateFormSelects() {
+  // Events
+  const fe = document.getElementById('f-event');
+  fe.innerHTML = _autoMeta.events.map(e => `<option value="${e}">${e}</option>`).join('');
+  // Animations
+  const fa = document.getElementById('f-anim');
+  fa.innerHTML = Object.keys(_autoMeta.animations).map(a => `<option value="${a}">${a}</option>`).join('');
+  // Strips
+  const fs = document.getElementById('f-strips');
+  fs.innerHTML = (_autoMeta.strips || []).map(s =>
+    `<div class="strip-check checked${s==='ledbar'?' ledbar-check':''}"
+       id="sc-${s}" onclick="toggleStripCheck('${s}')">${s==='ledbar'?'LED BAR':s}</div>`
+  ).join('');
+  renderParamInputs();
+}
+
+function toggleStripCheck(s) {
+  document.getElementById(`sc-${s}`)?.classList.toggle('checked');
+}
+
+function showBindingForm(id) {
+  _editingId = id || null;
+  const form = document.getElementById('binding-form');
+  form.style.display = 'flex';
+
+  if (id) {
+    const b = _bindings.find(x => x.id === id);
+    if (!b) return;
+    document.getElementById('f-label').value    = b.label    || '';
+    document.getElementById('f-event').value    = b.event    || '';
+    document.getElementById('f-anim').value     = b.animation|| '';
+    document.getElementById('f-priority').value = b.priority || 5;
+    document.getElementById('f-onexit').value   = b.on_exit?.type || 'off';
+    renderParamInputs();
+    renderOnExitExtra();
+    // Restore on_exit extra
+    if (b.on_exit?.type === 'static'  && document.getElementById('foe-static'))
+      document.getElementById('foe-static').value  = b.on_exit.state  || 'off';
+    if (b.on_exit?.type === 'preset'  && document.getElementById('foe-preset'))
+      document.getElementById('foe-preset').value  = b.on_exit.name   || '';
+    // Strip checks
+    (_autoMeta.strips || []).forEach(s => {
+      document.getElementById(`sc-${s}`)?.classList.toggle('checked', b.targets.includes(s));
+    });
+  } else {
+    document.getElementById('f-label').value    = '';
+    document.getElementById('f-priority').value = 5;
+    renderParamInputs();
+    renderOnExitExtra();
+    (_autoMeta.strips || []).forEach(s => {
+      document.getElementById(`sc-${s}`)?.classList.add('checked');
+    });
+  }
+  form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function hideBindingForm() {
+  document.getElementById('binding-form').style.display = 'none';
+  _editingId = null;
+}
+
+function saveBinding() {
+  const anim = document.getElementById('f-anim').value;
+  const meta = _autoMeta.animations[anim];
+
+  // Collect params
+  const params = {};
+  const defs   = isLedbarAnim(anim) ? PARAM_DEFS_LEDBAR : PARAM_DEFS;
+  if (meta) {
+    Object.entries(meta.defaults).forEach(([key]) => {
+      const el  = document.getElementById(`fp-${key}`);
+      if (!el) return;
+      const def = defs[key];
+      if (def?.type === 'rgb_array') params[key] = hex2rgb(el.value);
+      else if (el.tagName === 'SELECT') params[key] = el.value;
+      else params[key] = +el.value;
+    });
+  }
+
+  // Collect targets
+  const targets = (_autoMeta.strips || []).filter(s => {
+    const el = document.getElementById(`sc-${s}`);
+    return el && el.classList.contains('checked');
+  });
+  if (!targets.length) { toast(T[lang].err || 'Sélectionnez au moins un strip', 'error'); return; }
+
+  // on_exit
+  const oeType = document.getElementById('f-onexit').value;
+  const on_exit = { type: oeType };
+  if (oeType === 'static') {
+    on_exit.state = document.getElementById('foe-static')?.value || 'off';
+  } else if (oeType === 'preset') {
+    on_exit.name  = document.getElementById('foe-preset')?.value || '';
+  }
+
+  const binding = {
+    label:     document.getElementById('f-label').value.trim(),
+    event:     document.getElementById('f-event').value,
+    animation: anim,
+    params,
+    targets,
+    priority:  +document.getElementById('f-priority').value,
+    on_exit,
+    enabled:   true,
+  };
+
+  const method = _editingId ? 'PUT' : 'POST';
+  const path   = _editingId ? `/api/binding/${_editingId}` : '/api/binding';
+
+  api(method, path, binding)
+    .then(d => {
+      if (method === 'POST') {
+        _bindings.push(d.binding);
+      } else {
+        const idx = _bindings.findIndex(b => b.id === _editingId);
+        if (idx >= 0) _bindings[idx] = d.binding;
+      }
+      renderBindings();
+      hideBindingForm();
+      toast(T[lang].ok, 'ok');
+    })
+    .catch(() => toast(T[lang].err, 'error'));
+}
+
+/* ── Active animations polling ─────────────────────────────────────────── */
+
+function updateAutoStatus(data) {
+  const active = data.active || [];
+  const badge  = document.getElementById('auto-active-badge');
+  badge.textContent = `${active.length} active${active.length !== 1 ? 's' : ''}`;
+  badge.className   = active.length > 0 ? 'badge live' : 'badge';
+
+  const list = document.getElementById('active-list');
+  if (!active.length) {
+    list.innerHTML = `<span class="active-empty">${T[lang].none_active||'Aucune animation en cours'}</span>`;
+    return;
+  }
+  list.innerHTML = active.map(a =>
+    `<span class="active-tag">${a.animation} · ${a.targets.join(',')}</span>`
+  ).join('');
+}
+
+function stopAllAnimations() {
+  api('POST', '/api/animation/stop', {})
+    .then(() => toast(T[lang].ok, 'ok'))
+    .catch(() => toast(T[lang].err, 'error'));
+}
+
+/* ── Init (extend existing init) ───────────────────────────────────────── */
+const _origPollStatus = pollStatus;
+pollStatus = function() {
+  _origPollStatus();
+  api('GET', '/api/automation/status').then(updateAutoStatus).catch(() => {});
+};
+</script>
+
+<!-- ── SVG icons (reused via <use>) ────────────────────────────────────── -->
+<svg style="display:none">
+  <symbol id="ico-nvme" viewBox="0 0 32 20" fill="none">
+    <rect x="1" y="4" width="30" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+    <rect x="5" y="7" width="4" height="6" rx="1" fill="currentColor" opacity=".6"/>
+    <rect x="12" y="7" width="4" height="6" rx="1" fill="currentColor" opacity=".6"/>
+    <rect x="19" y="7" width="4" height="6" rx="1" fill="currentColor" opacity=".6"/>
+    <rect x="28" y="8" width="2" height="4" rx="1" fill="currentColor" opacity=".4"/>
+  </symbol>
+  <symbol id="ico-hdd" viewBox="0 0 24 24" fill="none">
+    <rect x="2" y="6" width="20" height="12" rx="3" stroke="currentColor" stroke-width="1.5"/>
+    <circle cx="17" cy="12" r="2.5" stroke="currentColor" stroke-width="1.5"/>
+    <line x1="5" y1="10" x2="12" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="5" y1="14" x2="9"  y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="ico-net" viewBox="0 0 24 24" fill="none">
+    <rect x="2" y="8" width="20" height="8" rx="2" stroke="currentColor" stroke-width="1.5"/>
+    <line x1="6"  y1="12" x2="6"  y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="10" y1="12" x2="10" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="14" y1="12" x2="14" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="18" y1="12" x2="18" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M6 8V5M12 8V4M18 8V5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="ico-pwr" viewBox="0 0 24 24" fill="none">
+    <path d="M12 4v8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <path d="M8.5 6.5A7 7 0 1 0 15.5 6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </symbol>
+</svg>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   i18n
+═══════════════════════════════════════════════════════════════════════════ */
+const T = {
+  fr: {
+    lb_title:     'Barre LED frontale',
+    solid:        'Fixe',
+    breath:       'Respiration',
+    loop:         'Dégradé',
+    brightness:   'Luminosité',
+    color:        'Couleur',
+    color1:       'Couleur 1',
+    color2:       'Couleur 2',
+    panel_title:  'Panneau avant',
+    white:        'Blanc',
+    red:          'Rouge',
+    blink:        'Blink',
+    off:          'Off',
+    presets_title:'Presets',
+    save:         'Sauvegarder',
+    no_presets:   'Aucun preset sauvegardé',
+    preset_ph:    'Nom du preset…',
+    all_off:      'Tout éteindre',
+    sys_title:    'Système',
+    loading:      'Chargement…',
+    ok:           'Commande envoyée',
+    err:          'Erreur de connexion',
+    need_name:    'Entrez un nom de preset',
+    auto_title:   'Automations',
+    poller_title: 'Metric Poller',
+    interval:     'Intervalle',
+    apply:        'Appliquer',
+    stop_all:     '⬛ Stop',
+    active_title: 'Actives',
+    none_active:  'Aucune animation en cours',
+    bindings_title:'Règles',
+    no_bindings:  'Aucune règle configurée',
+    add_binding:  '+ Ajouter',
+    thr_net_in:   'Net in',
+    thr_net_out:  'Net out',
+    thr_cpu:      'CPU',
+    thr_cpu_sus:  'CPU soutenu',
+    thr_ram:      'RAM',
+    thr_disk:     'Disk I/O',
+    f_label:      'Label',
+    f_event:      'Événement',
+    f_anim:       'Animation',
+    f_targets:    'Strips',
+    f_priority:   'Priorité',
+    f_onexit:     'On exit',
+    f_save:       'Sauvegarder',
+    cancel:       'Annuler',
+  },
+  en: {
+    lb_title:     'Front LED Bar',
+    solid:        'Solid',
+    breath:       'Breath',
+    loop:         'Loop',
+    brightness:   'Brightness',
+    color:        'Color',
+    color1:       'Color 1',
+    color2:       'Color 2',
+    panel_title:  'Front Panel',
+    white:        'White',
+    red:          'Red',
+    blink:        'Blink',
+    off:          'Off',
+    presets_title:'Presets',
+    save:         'Save',
+    no_presets:   'No saved presets',
+    preset_ph:    'Preset name…',
+    all_off:      'All off',
+    sys_title:    'System',
+    loading:      'Loading…',
+    ok:           'Command sent',
+    err:          'Connection error',
+    need_name:    'Enter a preset name',
+    auto_title:   'Automations',
+    poller_title: 'Metric Poller',
+    interval:     'Interval',
+    apply:        'Apply',
+    stop_all:     '⬛ Stop',
+    active_title: 'Active',
+    none_active:  'No animations running',
+    bindings_title:'Rules',
+    no_bindings:  'No rules configured',
+    add_binding:  '+ Add',
+    thr_net_in:   'Net in',
+    thr_net_out:  'Net out',
+    thr_cpu:      'CPU',
+    thr_cpu_sus:  'CPU sustained',
+    thr_ram:      'RAM',
+    thr_disk:     'Disk I/O',
+    f_label:      'Label',
+    f_event:      'Event',
+    f_anim:       'Animation',
+    f_targets:    'Strips',
+    f_priority:   'Priority',
+    f_onexit:     'On exit',
+    f_save:       'Save',
+    cancel:       'Cancel',
+  },
+};
+let lang = 'fr';
+
+function setLang(l) {
+  lang = l;
+  document.querySelectorAll('.lang-btn').forEach(b => b.classList.toggle('on', b.textContent === l.toUpperCase()));
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const v = T[l][el.dataset.i18n];
+    if (v) el.textContent = v;
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const v = T[l][el.dataset.i18nPlaceholder];
+    if (v) el.placeholder = v;
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   App state (mirrors backend)
+═══════════════════════════════════════════════════════════════════════════ */
+const S = {
+  bus:    null,
+  ledbar: { mode:'solid', brightness:200, color:[0,200,255], loop_color1:[255,50,0], loop_color2:[0,100,255] },
+  switch: { color:'white', blink:false },
+  strips: {},
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Bay definitions  — visual order = panel layout
+═══════════════════════════════════════════════════════════════════════════ */
+const BAYS = [
+  { id:'nvme1', label:'NVMe 1', ico:'ico-nvme', kind:'strip' },
+  { id:'nvme2', label:'NVMe 2', ico:'ico-nvme', kind:'strip' },
+  { id:'nvme3', label:'NVMe 3', ico:'ico-nvme', kind:'strip' },
+  { id:'nvme4', label:'NVMe 4', ico:'ico-nvme', kind:'strip' },
+  { id:'hdd0',  label:'HDD 0',  ico:'ico-hdd',  kind:'strip' },
+  { id:'hdd1',  label:'HDD 1',  ico:'ico-hdd',  kind:'strip' },
+  { id:'net',   label:'NET',    ico:'ico-net',  kind:'strip' },
+  { id:'pwr',   label:'PWR',    ico:'ico-pwr',  kind:'switch' },
+];
+
+function buildPanel() {
+  const grid = document.getElementById('panel-grid');
+  BAYS.forEach(bay => {
+    const el = document.createElement('div');
+    el.className = 'bay';
+    el.id = `bay-${bay.id}`;
+    el.innerHTML = `
+      <div class="bay-icon">
+        <svg><use href="#${bay.ico}"/></svg>
+      </div>
+      <div class="bay-name">${bay.label}</div>
+      <div class="dot" id="dot-${bay.id}"></div>
+      <div class="bay-btns">
+        <button class="bay-btn" onclick="baySet('${bay.id}','white')" data-i18n="white">Blanc</button>
+        <button class="bay-btn" onclick="baySet('${bay.id}','red')"   data-i18n="red">Rouge</button>
+        <button class="bay-btn" onclick="baySet('${bay.id}','blink')" data-i18n="blink">Blink</button>
+        <button class="bay-btn" onclick="baySet('${bay.id}','off')"   data-i18n="off">Off</button>
+      </div>`;
+    grid.appendChild(el);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UI rendering helpers
+═══════════════════════════════════════════════════════════════════════════ */
+function rgb2hex([r,g,b]) {
+  return '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('').toUpperCase();
+}
+function hex2rgb(h) {
+  return [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
+}
+
+/* --- LED BAR preview --- */
+let _loopTick = null;
+
+function updatePreview() {
+  const el = document.getElementById('lb-preview');
+  const lb = S.ledbar;
+
+  clearInterval(_loopTick);
+  el.style.animation = 'none';
+
+  if (lb.mode === 'solid') {
+    const [r,g,b] = lb.color;
+    el.style.backgroundColor = `rgb(${r},${g},${b})`;
+    el.style.boxShadow = `0 0 22px rgba(${r},${g},${b},${lb.brightness/510})`;
+  }
+  else if (lb.mode === 'breath') {
+    const [r,g,b] = lb.color;
+    el.style.backgroundColor = `rgb(${r},${g},${b})`;
+    el.style.boxShadow = `0 0 22px rgba(${r},${g},${b},.25)`;
+    // Trigger reflow so re-applying animation works
+    void el.offsetWidth;
+    el.style.animation = 'lb-breath 2.4s ease-in-out infinite';
+  }
+  else { // loop
+    let t = 0;
+    function tick() {
+      const [r1,g1,b1] = S.ledbar.loop_color1;
+      const [r2,g2,b2] = S.ledbar.loop_color2;
+      const p = (Math.sin(t) + 1) / 2;
+      const r = Math.round(r1 + (r2-r1)*p);
+      const g = Math.round(g1 + (g2-g1)*p);
+      const b = Math.round(b1 + (b2-b1)*p);
+      el.style.backgroundColor = `rgb(${r},${g},${b})`;
+      el.style.boxShadow = `0 0 22px rgba(${r},${g},${b},.3)`;
+      t += 0.035;
+    }
+    tick();
+    _loopTick = setInterval(tick, 33);
+  }
+}
+
+function updateColorInputs() {
+  const lb = S.ledbar;
+  const h  = rgb2hex(lb.color);
+  document.getElementById('cp-color').value = h;
+  document.getElementById('cp-color-hex').textContent = h;
+  const h1 = rgb2hex(lb.loop_color1), h2 = rgb2hex(lb.loop_color2);
+  document.getElementById('cp-loop1').value = h1; document.getElementById('cp-loop1-hex').textContent = h1;
+  document.getElementById('cp-loop2').value = h2; document.getElementById('cp-loop2-hex').textContent = h2;
+}
+
+function updateModeUI() {
+  const m = S.ledbar.mode;
+  ['solid','breath','loop'].forEach(x => document.getElementById(`mb-${x}`).classList.toggle('on', x===m));
+  document.getElementById('cp-solid').style.display  = m !== 'loop' ? 'block' : 'none';
+  document.getElementById('cp-loop').style.display   = m === 'loop' ? 'flex'  : 'none';
+}
+
+function updateBrightUI() {
+  const v = S.ledbar.brightness;
+  const sl = document.getElementById('bright-slider');
+  sl.value = v;
+  sl.style.setProperty('--pct', Math.round(v/255*100) + '%');
+  document.getElementById('bright-val').textContent = v;
+}
+
+/* --- Bay / dot --- */
+function renderBay(id, st) {
+  const dot  = document.getElementById(`dot-${id}`);
+  const card = document.getElementById(`bay-${id}`);
+  if (!dot || !card) return;
+
+  dot.className  = 'dot'  + (st !== 'off' ? ` ${st}` : '');
+  card.className = 'bay'  + (st !== 'off' ? ` s-${st}` : '');
+
+  card.querySelectorAll('.bay-btn').forEach((btn, i) => {
+    const states = ['white','red','blink','off'];
+    btn.className = 'bay-btn' + (states[i] === st ? ` sel-${states[i]}` : '');
+  });
+}
+
+/* --- Bus badge --- */
+function renderBadge() {
+  const b = document.getElementById('bus-badge');
+  if (S.bus !== null) {
+    b.textContent = `I2C BUS ${S.bus}`; b.className = 'badge live';
+  } else {
+    b.textContent = 'I2C N/A'; b.className = 'badge';
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Event handlers
+═══════════════════════════════════════════════════════════════════════════ */
+function setMode(m) {
+  S.ledbar.mode = m;
+  updateModeUI(); updatePreview(); sendLedbar();
+}
+
+let _brightTimer;
+function onBright(v) {
+  S.ledbar.brightness = +v;
+  updateBrightUI(); updatePreview();
+  clearTimeout(_brightTimer);
+  _brightTimer = setTimeout(sendLedbar, 280);
+}
+
+function onSolidColor(hex) {
+  S.ledbar.color = hex2rgb(hex);
+  document.getElementById('cp-color-hex').textContent = hex.toUpperCase();
+  updatePreview();
+}
+
+function onLoopColors() {
+  S.ledbar.loop_color1 = hex2rgb(document.getElementById('cp-loop1').value);
+  S.ledbar.loop_color2 = hex2rgb(document.getElementById('cp-loop2').value);
+  document.getElementById('cp-loop1-hex').textContent = document.getElementById('cp-loop1').value.toUpperCase();
+  document.getElementById('cp-loop2-hex').textContent = document.getElementById('cp-loop2').value.toUpperCase();
+  updatePreview();
+}
+
+/* --- Bay click (strip or switch) --- */
+function baySet(id, st) {
+  const bay = BAYS.find(b => b.id === id);
+  if (!bay) return;
+
+  if (bay.kind === 'strip') {
+    S.strips[id] = { state: st };
+    renderBay(id, st);
+    api('POST', `/api/strip/${id}`, { state: st })
+      .then(() => toast(T[lang].ok,'ok'))
+      .catch(() => toast(T[lang].err,'error'));
+  } else {
+    // PWR bay maps to /api/switch
+    let sw;
+    if (st === 'white')  sw = { color:'white', blink:false };
+    else if (st === 'red')   sw = { color:'red',   blink:false };
+    else if (st === 'blink') sw = { color: S.switch.color === 'off' ? 'white' : S.switch.color, blink:true };
+    else                     sw = { color:'off',   blink:false };
+
+    S.switch = sw;
+    // Derive visual state for the dot
+    const dotSt = sw.color === 'off' ? 'off' : (sw.blink ? 'blink' : sw.color);
+    renderBay(id, dotSt);
+    api('POST', '/api/switch', sw)
+      .then(() => toast(T[lang].ok,'ok'))
+      .catch(() => toast(T[lang].err,'error'));
+  }
+}
+
+function allOff() {
+  api('POST', '/api/all/off', {})
+    .then(() => {
+      S.ledbar.brightness = 0; updateBrightUI(); updatePreview();
+      S.switch = { color:'off', blink:false };
+      BAYS.forEach(b => {
+        if (b.kind === 'strip') S.strips[b.id] = { state:'off' };
+        const dotSt = b.kind === 'strip' ? 'off'
+          : (S.switch.color === 'off' ? 'off' : (S.switch.blink ? 'blink' : S.switch.color));
+        renderBay(b.id, dotSt);
+      });
+      toast(T[lang].ok,'ok');
+    })
+    .catch(() => toast(T[lang].err,'error'));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LED BAR send (debounced by caller for sliders)
+═══════════════════════════════════════════════════════════════════════════ */
+function sendLedbar() {
+  api('POST', '/api/ledbar', S.ledbar)
+    .then(() => toast(T[lang].ok,'ok'))
+    .catch(() => toast(T[lang].err,'error'));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Status polling
+═══════════════════════════════════════════════════════════════════════════ */
+function applyStatus(data) {
+  const sys = data.system;
+  if (sys?.available) {
+    const cpuStr = sys.cpu + '%';
+    document.getElementById('h-cpu').textContent = cpuStr;
+    document.getElementById('s-cpu').textContent = cpuStr;
+    setBar('b-cpu', sys.cpu);
+
+    const ramStr = `${sys.ram.percent}%`;
+    document.getElementById('h-ram').textContent = ramStr;
+    document.getElementById('s-ram').textContent = `${ramStr} · ${sys.ram.used_gb}/${sys.ram.total_gb} GB`;
+    setBar('b-ram', sys.ram.percent);
+
+    const dl = document.getElementById('disk-list');
+    if (sys.disks.length) {
+      dl.innerHTML = sys.disks.slice(0,8).map(d => `
+        <div class="disk-row">
+          <span class="disk-mp" title="${d.device}">${d.mountpoint}</span>
+          <div class="bar"><div class="bar-fill ${barClass(d.percent)}" style="width:${d.percent}%"></div></div>
+          <span class="sys-val" style="font-size:.62rem">${d.percent}%</span>
+        </div>`).join('');
+    } else {
+      dl.innerHTML = '<span style="font-size:.68rem;color:var(--text-dim)">—</span>';
+    }
+  }
+
+  if (data.state?.bus !== undefined) {
+    S.bus = data.state.bus;
+    renderBadge();
+  }
+}
+
+function setBar(id, pct) {
+  const el = document.getElementById(id);
+  el.style.width = pct + '%';
+  el.className   = 'bar-fill ' + barClass(pct);
+}
+function barClass(p) { return p > 90 ? 'crit' : p > 70 ? 'warn' : ''; }
+
+function pollStatus() {
+  api('GET', '/api/status').then(applyStatus).catch(() => {});
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Presets
+═══════════════════════════════════════════════════════════════════════════ */
+let _presets = [];
+
+function loadPresets() {
+  api('GET', '/api/preset')
+    .then(d => { _presets = d.presets || []; renderPresets(); })
+    .catch(() => {});
+}
+
+function renderPresets() {
+  const list = document.getElementById('preset-list');
+  if (!_presets.length) {
+    list.innerHTML = `<div class="preset-empty" data-i18n="no_presets">${T[lang].no_presets}</div>`;
+    return;
+  }
+  list.innerHTML = _presets.map(name => `
+    <div class="preset-item">
+      <button class="preset-apply" onclick="applyPreset('${name.replace(/'/g,"\\'")}')">
+        ${name}
+      </button>
+      <button class="preset-del" onclick="deletePreset('${name.replace(/'/g,"\\'")}')">✕</button>
+    </div>`).join('');
+}
+
+function savePreset() {
+  const input = document.getElementById('preset-name');
+  const name  = input.value.trim();
+  if (!name) { toast(T[lang].need_name, 'error'); return; }
+  api('POST', `/api/preset/${encodeURIComponent(name)}`, {})
+    .then(() => {
+      if (!_presets.includes(name)) _presets.push(name);
+      renderPresets();
+      input.value = '';
+      toast(T[lang].ok, 'ok');
+    })
+    .catch(() => toast(T[lang].err, 'error'));
+}
+
+function applyPreset(name) {
+  api('POST', `/api/preset/${encodeURIComponent(name)}/apply`, {})
+    .then(d => {
+      if (!d.state) return;
+      if (d.state.ledbar) Object.assign(S.ledbar, d.state.ledbar);
+      if (d.state.switch) Object.assign(S.switch, d.state.switch);
+      if (d.state.strips) Object.entries(d.state.strips).forEach(([id, v]) => {
+        S.strips[id] = v; renderBay(id, v.state);
+      });
+      const sw = S.switch;
+      renderBay('pwr', sw.color === 'off' ? 'off' : sw.blink ? 'blink' : sw.color);
+      updateModeUI(); updateBrightUI(); updateColorInputs(); updatePreview();
+      toast(T[lang].ok, 'ok');
+    })
+    .catch(() => toast(T[lang].err, 'error'));
+}
+
+function deletePreset(name) {
+  api('DELETE', `/api/preset/${encodeURIComponent(name)}`)
+    .then(() => {
+      _presets = _presets.filter(n => n !== name);
+      renderPresets();
+      toast(T[lang].ok, 'ok');
+    })
+    .catch(() => toast(T[lang].err, 'error'));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   API wrapper
+═══════════════════════════════════════════════════════════════════════════ */
+function api(method, path, body) {
+  return fetch(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Toast
+═══════════════════════════════════════════════════════════════════════════ */
+function toast(msg, type = 'ok') {
+  const c  = document.getElementById('toasts');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<div class="t-dot"></div><span>${msg}</span>`;
+  c.appendChild(el);
+  setTimeout(() => {
+    el.style.animation = 't-out .2s ease forwards';
+    setTimeout(() => el.remove(), 210);
+  }, 2400);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Init
+═══════════════════════════════════════════════════════════════════════════ */
+// CSS keyframe for breath (injected once)
+const _style = document.createElement('style');
+_style.textContent = `@keyframes lb-breath { 0%,100%{opacity:.1} 50%{opacity:1} }`;
+document.head.appendChild(_style);
+
+function init() {
+  buildPanel();
+
+  api('GET', '/api/state')
+    .then(data => {
+      if (data.bus   !== undefined) S.bus   = data.bus;
+      if (data.ledbar)  Object.assign(S.ledbar,  data.ledbar);
+      if (data.switch)  Object.assign(S.switch,  data.switch);
+      if (data.strips) {
+        Object.entries(data.strips).forEach(([id, v]) => {
+          S.strips[id] = v;
+          renderBay(id, v.state);
+        });
+      }
+      // PWR bay initial state
+      const sw = S.switch;
+      renderBay('pwr', sw.color === 'off' ? 'off' : sw.blink ? 'blink' : sw.color);
+
+      renderBadge();
+      updateModeUI();
+      updateBrightUI();
+      updateColorInputs();
+      updatePreview();
+    })
+    .catch(() => {
+      document.getElementById('bus-badge').textContent = 'OFFLINE';
+    });
+
+  loadPresets();
+  loadPollerConfig();
+  loadBindings();
+  pollStatus();
+  setInterval(pollStatus, 5000);
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
