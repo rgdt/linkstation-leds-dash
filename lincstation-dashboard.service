@@ -18,5 +18,22 @@ SyslogIdentifier=lincstation-led
 # Ensure access to I2C devices
 SupplementaryGroups=i2c
 
+# Hardening — the service only needs /dev/i2c-* and its own directory
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# OIDC sign-in (see README); the first account to sign in becomes admin
+Environment=OIDC_ISSUER=https://id.example.lan
+Environment=OIDC_CLIENT_ID=
+Environment=PUBLIC_BASE_URL=https://leds.example.lan
+# Uncomment to listen on localhost only (e.g. behind a reverse proxy):
+# Environment=BIND_HOST=127.0.0.1
+
 [Install]
 WantedBy=multi-user.target

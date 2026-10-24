@@ -9,3 +9,7 @@ venv/
 presets.json
 bindings.json
 poller_config.json
+tests/
+requirements-dev.txt
+users.json
+session_secret

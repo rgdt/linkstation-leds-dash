@@ -17,8 +17,11 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 
 from flask import Flask, jsonify, request, send_from_directory
+
+from auth import init_auth
 
 try:
     import psutil
@@ -287,7 +290,75 @@ def _load_presets() -> None:
 def _save_presets() -> None:
     PRESETS_FILE.write_text(json.dumps(presets, indent=2))
 
-app = Flask(__name__, static_folder=str(STATIC_DIR))
+# static_folder=None: the default /static route would otherwise serve every
+# file in the app directory (source code, presets.json, bindings.json, venv…).
+app = Flask(__name__, static_folder=None)
+
+
+# ---------------------------------------------------------------------------
+# Request hardening
+# ---------------------------------------------------------------------------
+
+MAX_PRESETS  = 100
+MAX_BINDINGS = 100
+NAME_MAX_LEN = 64
+
+# Extra origins allowed to call the API (comma-separated, e.g. a reverse proxy URL).
+# PUBLIC_BASE_URL, the address the dashboard is served on, is always allowed.
+ALLOWED_ORIGINS = {
+    o.strip().rstrip("/")
+    for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") + [os.environ.get("PUBLIC_BASE_URL", "")]
+    if o.strip()
+}
+
+
+@app.before_request
+def _csrf_guard():
+    """Block cross-site requests that change state.
+
+    - A cross-origin Origin header (sent by browsers on POST/PUT/DELETE) is rejected.
+    - POST/PUT must carry Content-Type: application/json, which a third-party page
+      cannot send without a CORS preflight this API never grants.
+    """
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return None
+    origin = request.headers.get("Origin")
+    if origin and origin != "null":
+        if urlparse(origin).netloc != request.host and origin.rstrip("/") not in ALLOWED_ORIGINS:
+            return jsonify({"ok": False, "error": "Cross-origin request rejected"}), 403
+    elif origin == "null":
+        return jsonify({"ok": False, "error": "Cross-origin request rejected"}), 403
+    if request.method in ("POST", "PUT", "PATCH") and not request.is_json:
+        return jsonify({"ok": False, "error": "Content-Type must be application/json"}), 415
+    return None
+
+
+@app.after_request
+def _security_headers(resp):
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "same-origin")
+    return resp
+
+
+@app.errorhandler(ValueError)
+@app.errorhandler(TypeError)
+def _bad_input(_err):
+    return jsonify({"ok": False, "error": "Invalid input"}), 400
+
+
+# OIDC sign-in and roles; registered after _csrf_guard so that guard runs first.
+user_store = init_auth(app, DATA_DIR)
+
+
+def _json_body() -> dict:
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else {}
+
+
+def _valid_name(name) -> bool:
+    return (isinstance(name, str) and 0 < len(name) <= NAME_MAX_LEN
+            and name.isprintable())
 
 
 @app.route("/")
@@ -324,7 +395,7 @@ def api_ledbar():
       loop_color1  : [R, G, B]
       loop_color2  : [R, G, B]
     """
-    data = request.get_json(force=True) or {}
+    data = _json_body()
     lb   = state["ledbar"]
 
     if "mode" in data and data["mode"] in LEDBAR_MODES_REV:
@@ -332,7 +403,7 @@ def api_ledbar():
     if "brightness" in data:
         lb["brightness"] = max(0, min(255, int(data["brightness"])))
     for key in ("color", "loop_color1", "loop_color2"):
-        if key in data and len(data[key]) == 3:
+        if key in data and isinstance(data[key], list) and len(data[key]) == 3:
             lb[key] = [max(0, min(255, int(c))) for c in data[key]]
 
     apply_ledbar(lb)
@@ -347,7 +418,7 @@ def api_switch():
       color : "white" | "red" | "off"
       blink : true | false
     """
-    data = request.get_json(force=True) or {}
+    data = _json_body()
     sw   = state["switch"]
 
     if "color" in data and data["color"] in ("white", "red", "off"):
@@ -370,7 +441,7 @@ def api_strip(strip_id: str):
     if strip_id not in STRIPS:
         return jsonify({"ok": False, "error": f"Unknown strip: {strip_id}"}), 400
 
-    data      = request.get_json(force=True) or {}
+    data      = _json_body()
     new_state = data.get("state", "off")
 
     if new_state not in ("off", "white", "red", "blink"):
@@ -411,6 +482,10 @@ def api_preset(name: str):
         return jsonify({"ok": True})
 
     # POST — snapshot current state
+    if not _valid_name(name):
+        return jsonify({"ok": False, "error": "Invalid preset name"}), 400
+    if name not in presets and len(presets) >= MAX_PRESETS:
+        return jsonify({"ok": False, "error": "Too many presets"}), 400
     presets[name] = {
         "ledbar": copy.deepcopy(state["ledbar"]),
         "switch": copy.deepcopy(state["switch"]),
@@ -628,6 +703,114 @@ ANIMATION_LIBRARY: dict = {
 
 
 # ---------------------------------------------------------------------------
+# Input validation (API payloads and files loaded from disk)
+# ---------------------------------------------------------------------------
+
+MIN_FRAME_MS  = 50       # floor for any frame delay — keeps i2cset calls bounded
+MAX_FRAME_MS  = 60_000
+STRIP_COLORS  = ("off", "white", "red", "blink")
+ON_EXIT_TYPES = ("off", "static", "preset")
+BINDING_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
+
+# Numeric param bounds: key → (min, max)
+_PARAM_BOUNDS = {
+    "speed_ms":   (MIN_FRAME_MS, MAX_FRAME_MS),
+    "on_ms":      (MIN_FRAME_MS, MAX_FRAME_MS),
+    "off_ms":     (MIN_FRAME_MS, MAX_FRAME_MS),
+    "tail":       (0, len(STRIPS)),
+    "step":       (1, len(STRIPS)),
+    "fill_pct":   (0, 100),
+    "brightness": (0, 255),
+}
+
+
+def _clamp_num(value, lo, hi, default):
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return default
+    if v != v:   # NaN
+        return default
+    v = max(lo, min(hi, v))
+    return int(v) if isinstance(default, int) else v
+
+
+def _rgb(value, default: list) -> list:
+    if isinstance(value, list) and len(value) == 3:
+        try:
+            return [max(0, min(255, int(c))) for c in value]
+        except (TypeError, ValueError):
+            pass
+    return list(default)
+
+
+def sanitize_params(animation: str, params) -> dict:
+    """Keep only known params for this animation, coerced to safe values."""
+    defaults = ANIMATION_LIBRARY[animation]["defaults"]
+    params   = params if isinstance(params, dict) else {}
+    out: dict = {}
+    for key, default in defaults.items():
+        if key not in params:
+            continue
+        val = params[key]
+        if isinstance(default, list):
+            out[key] = _rgb(val, default)
+        elif isinstance(default, (int, float)):
+            lo, hi = _PARAM_BOUNDS.get(key, (0, MAX_FRAME_MS))
+            out[key] = _clamp_num(val, lo, hi, default)
+        elif key == "direction":
+            out[key] = val if val in ("ltr", "rtl") else default
+        else:   # strip color
+            out[key] = val if val in STRIP_COLORS else default
+    return out
+
+
+def sanitize_binding(data: dict, existing: dict | None = None) -> dict | None:
+    """Return a clean binding dict, or None if event/animation is invalid."""
+    base = dict(existing or {})
+    base.update(data)
+    if base.get("event") not in EventEngine.KNOWN_EVENTS:
+        return None
+    if base.get("animation") not in ANIMATION_LIBRARY:
+        return None
+
+    bid = base.get("id")
+    if not (isinstance(bid, str) and BINDING_ID_RE.match(bid)):
+        bid = str(uuid.uuid4())[:8]
+
+    label = base.get("label", "")
+    label = label[:NAME_MAX_LEN] if isinstance(label, str) else ""
+
+    valid_targets = list(STRIPS.keys()) + ["ledbar"]
+    targets = base.get("targets", list(STRIPS.keys()))
+    if not isinstance(targets, list):
+        targets = list(STRIPS.keys())
+    targets = [t for t in valid_targets if t in targets]
+
+    oe = base.get("on_exit")
+    oe = oe if isinstance(oe, dict) else {}
+    kind = oe.get("type") if oe.get("type") in ON_EXIT_TYPES else "off"
+    on_exit: dict = {"type": kind}
+    if kind == "static":
+        on_exit["state"] = oe.get("state") if oe.get("state") in STRIP_COLORS else "off"
+    elif kind == "preset":
+        name = oe.get("name", "")
+        on_exit["name"] = name if _valid_name(name) else ""
+
+    return {
+        "id":        bid,
+        "label":     label,
+        "event":     base["event"],
+        "animation": base["animation"],
+        "params":    sanitize_params(base["animation"], base.get("params", {})),
+        "targets":   targets,
+        "priority":  _clamp_num(base.get("priority", 5), 0, 100, 5),
+        "on_exit":   on_exit,
+        "enabled":   bool(base.get("enabled", True)),
+    }
+
+
+# ---------------------------------------------------------------------------
 # AnimationRunner
 # ---------------------------------------------------------------------------
 
@@ -664,7 +847,7 @@ class AnimationRunner:
         target_set = valid_strip_targets | ({"ledbar"} if is_ledbar else set())
         if not target_set:
             return False
-        merged = {**defn["defaults"], **params}
+        merged = {**defn["defaults"], **sanitize_params(animation, params)}
         frames = defn["fn"](merged, valid_strip_targets or {"ledbar"})
         if not frames:
             return False
@@ -752,33 +935,41 @@ class AnimationRunner:
                 due = [t for t in self._tasks.values() if now >= t["next_tick"]]
 
             if due:
-                # Per-strip: highest-priority task wins
-                winner: dict = {}   # strip_id → task
-                for task in due:
-                    for sid in task["targets"]:
-                        if sid not in winner or task["priority"] > winner[sid]["priority"]:
-                            winner[sid] = task
-
-                # Group strips back by winning task
-                by_task: dict = {}
-                for sid, task in winner.items():
-                    by_task.setdefault(task["id"], (task, set()))[1].add(sid)
-
-                for task, won_targets in by_task.values():
-                    frame = task["frames"][task["frame_idx"]]
-                    # Apply strip states
-                    for sid, st in frame.get("states", {}).items():
-                        if sid in won_targets:
-                            apply_strip(sid, st)
-                            state["strips"][sid]["state"] = st
-                    # Apply LED BAR state (chip handles animation internally)
-                    if "ledbar" in frame and "ledbar" in won_targets:
-                        state["ledbar"].update(frame["ledbar"])
-                        apply_ledbar(state["ledbar"])
-                    task["frame_idx"] = (task["frame_idx"] + 1) % len(task["frames"])
-                    task["next_tick"] = now + frame.get("delay_ms", 100) / 1000.0
+                try:
+                    self._tick(due, now)
+                except Exception as exc:   # never let a bad task kill the runner thread
+                    print(f"  WARNING: animation tick failed: {exc!r}")
+                    for t in due:
+                        t["next_tick"] = now + 1.0
 
             time.sleep(0.010)
+
+    def _tick(self, due: list, now: float):
+        # Per-strip: highest-priority task wins
+        winner: dict = {}   # strip_id → task
+        for task in due:
+            for sid in task["targets"]:
+                if sid not in winner or task["priority"] > winner[sid]["priority"]:
+                    winner[sid] = task
+
+        # Group strips back by winning task
+        by_task: dict = {}
+        for sid, task in winner.items():
+            by_task.setdefault(task["id"], (task, set()))[1].add(sid)
+
+        for task, won_targets in by_task.values():
+            frame = task["frames"][task["frame_idx"]]
+            # Apply strip states
+            for sid, st in frame.get("states", {}).items():
+                if sid in won_targets:
+                    apply_strip(sid, st)
+                    state["strips"][sid]["state"] = st
+            # Apply LED BAR state (chip handles animation internally)
+            if "ledbar" in frame and "ledbar" in won_targets:
+                state["ledbar"].update(frame["ledbar"])
+                apply_ledbar(state["ledbar"])
+            task["frame_idx"] = (task["frame_idx"] + 1) % len(task["frames"])
+            task["next_tick"] = now + max(MIN_FRAME_MS, frame.get("delay_ms", 100)) / 1000.0
 
 
 # ---------------------------------------------------------------------------
@@ -961,8 +1152,10 @@ def _load_automation_config() -> None:
     if BINDINGS_FILE.exists():
         try:
             loaded = json.loads(BINDINGS_FILE.read_text())
+            clean  = [sanitize_binding(b) for b in loaded if isinstance(b, dict)] \
+                if isinstance(loaded, list) else []
             bindings.clear()
-            bindings.extend(loaded)
+            bindings.extend(b for b in clean if b)
         except (json.JSONDecodeError, OSError):
             pass
 
@@ -1018,14 +1211,16 @@ def api_poller_config_route():
     """GET full config, POST to patch any field."""
     if request.method == "GET":
         return jsonify(poller_config)
-    patch = request.get_json(force=True) or {}
+    patch = _json_body()
     if "interval_ms" in patch:
-        poller_config["interval_ms"] = max(500, int(patch["interval_ms"]))
+        poller_config["interval_ms"] = int(_clamp_num(patch["interval_ms"], 500, 3_600_000, 2000))
     if "enabled" in patch:
         poller_config["enabled"] = bool(patch["enabled"])
     if "thresholds" in patch and isinstance(patch["thresholds"], dict):
         poller_config.setdefault("thresholds", {}).update(
-            {k: float(v) for k, v in patch["thresholds"].items()}
+            {k: _clamp_num(v, 0.0, 1e9, POLLER_DEFAULTS["thresholds"][k])
+             for k, v in patch["thresholds"].items()
+             if k in POLLER_DEFAULTS["thresholds"]}
         )
     _save_poller_config()
     if metric_poller:
@@ -1042,23 +1237,20 @@ def api_binding_collection():
             "events":     EventEngine.KNOWN_EVENTS,
             "strips":     list(STRIPS.keys()) + ["ledbar"],
         })
-    data = request.get_json(force=True) or {}
+    data = _json_body()
     if not data.get("event") or not data.get("animation"):
         return jsonify({"ok": False, "error": "event and animation are required"}), 400
     if data["animation"] not in ANIMATION_LIBRARY:
         return jsonify({"ok": False, "error": f"Unknown animation: {data['animation']}"}), 400
 
-    binding = {
-        "id":        data.get("id") or str(uuid.uuid4())[:8],
-        "label":     data.get("label", ""),
-        "event":     data["event"],
-        "animation": data["animation"],
-        "params":    data.get("params", {}),
-        "targets":   data.get("targets", list(STRIPS.keys())),
-        "priority":  int(data.get("priority", 5)),
-        "on_exit":   data.get("on_exit", {"type": "off"}),
-        "enabled":   bool(data.get("enabled", True)),
-    }
+    if len(bindings) >= MAX_BINDINGS:
+        return jsonify({"ok": False, "error": "Too many bindings"}), 400
+
+    binding = sanitize_binding(data)
+    if binding is None:
+        return jsonify({"ok": False, "error": "Invalid event or animation"}), 400
+    if any(b["id"] == binding["id"] for b in bindings):
+        binding["id"] = str(uuid.uuid4())[:8]
     bindings.append(binding)
     _save_bindings()
     # If this event is already active, start the animation immediately
@@ -1080,12 +1272,14 @@ def api_binding_item(binding_id: str):
         return jsonify({"ok": True})
 
     # PUT — update provided fields
-    data = request.get_json(force=True) or {}
-    b    = bindings[idx]
-    for field in ("label", "event", "animation", "params", "targets",
-                  "priority", "on_exit", "enabled"):
-        if field in data:
-            b[field] = data[field]
+    data = _json_body()
+    patch = {f: data[f] for f in ("label", "event", "animation", "params", "targets",
+                                  "priority", "on_exit", "enabled") if f in data}
+    b = sanitize_binding(patch, existing=bindings[idx])
+    if b is None:
+        return jsonify({"ok": False, "error": "Invalid event or animation"}), 400
+    b["id"] = binding_id
+    bindings[idx] = b
     _save_bindings()
     # Stop old instance unconditionally, then restart if event is currently active
     if animation_runner:
@@ -1130,6 +1324,7 @@ if __name__ == "__main__":
     print(f"  Bindings  : {len(bindings)} chargés")
     print(f"  Poller    : {poller_config['interval_ms']} ms  "
           f"({'actif' if poller_config.get('enabled') else 'inactif'})")
-    print(f"  URL       : http://0.0.0.0:50001")
+    host = os.environ.get("BIND_HOST", "0.0.0.0")
+    print(f"  URL       : http://{host}:50001")
     print()
-    app.run(host="0.0.0.0", port=50001, debug=False)
+    app.run(host=host, port=50001, debug=False)

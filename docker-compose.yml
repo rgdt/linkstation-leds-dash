@@ -10,6 +10,14 @@ services:
       - /dev/i2c-3:/dev/i2c-3
     environment:
       - I2C_BUS=3
+      # Sign-in through an OIDC provider such as Pocket ID (see README). The
+      # first account to sign in becomes admin and manages the others.
+      - OIDC_ISSUER=https://id.example.lan
+      - OIDC_CLIENT_ID=
+      # Leave empty for a Pocket ID "public client" (PKCE only).
+      # - OIDC_CLIENT_SECRET=
+      # Must match the callback registered with the provider: <PUBLIC_BASE_URL>/auth/callback
+      - PUBLIC_BASE_URL=https://leds.example.lan
     volumes:
       - lincstation-data:/app/data
 
