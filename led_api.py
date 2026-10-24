@@ -21,6 +21,8 @@ from urllib.parse import urlparse
 
 from flask import Flask, jsonify, request, send_from_directory
 
+from auth import init_auth
+
 try:
     import psutil
     HAS_PSUTIL = True
@@ -302,8 +304,11 @@ MAX_BINDINGS = 100
 NAME_MAX_LEN = 64
 
 # Extra origins allowed to call the API (comma-separated, e.g. a reverse proxy URL).
+# PUBLIC_BASE_URL, the address the dashboard is served on, is always allowed.
 ALLOWED_ORIGINS = {
-    o.strip().rstrip("/") for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()
+    o.strip().rstrip("/")
+    for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") + [os.environ.get("PUBLIC_BASE_URL", "")]
+    if o.strip()
 }
 
 
@@ -340,6 +345,10 @@ def _security_headers(resp):
 @app.errorhandler(TypeError)
 def _bad_input(_err):
     return jsonify({"ok": False, "error": "Invalid input"}), 400
+
+
+# OIDC sign-in and roles; registered after _csrf_guard so that guard runs first.
+user_store = init_auth(app, DATA_DIR)
 
 
 def _json_body() -> dict:

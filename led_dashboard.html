@@ -112,6 +112,40 @@
     }
     .lang-btn.on { background: var(--cyan); color: #000; }
 
+    /* ── Account (header + users dialog) ───────────────────────────────── */
+    .hdr-user {
+      max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .hdr-btn {
+      padding: 3px 10px; border: 1px solid var(--border); border-radius: var(--r-sm);
+      background: transparent; color: var(--text-dim); cursor: pointer;
+      font-family: var(--font-ui); font-size: .68rem; font-weight: 700; letter-spacing: .5px;
+      text-decoration: none; transition: var(--ease); white-space: nowrap;
+    }
+    .hdr-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+    @media (max-width: 720px) {
+      .hdr { height: auto; flex-wrap: wrap; gap: .5rem; padding: .5rem 1rem; }
+      .hdr .sep, .hdr-stats { display: none; }
+    }
+    .modal {
+      position: fixed; inset: 0; z-index: 200; display: flex;
+      align-items: flex-start; justify-content: center;
+      padding: 72px 16px 16px; background: rgba(0,0,0,.6);
+    }
+    .modal[hidden] { display: none; }
+    .modal-card { width: 100%; max-width: 640px; max-height: calc(100vh - 96px); overflow: auto; }
+    .user-row {
+      display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+      padding: .6rem 0; border-top: 1px solid var(--border);
+    }
+    .user-info { flex: 1; min-width: 160px; }
+    .user-name { font-weight: 600; }
+    .user-sub  { font-family: var(--font-mono); font-size: .62rem; color: var(--text-dim); word-break: break-all; }
+    .user-row.pending .user-name::after {
+      content: ' •'; color: var(--amber);
+    }
+    .users-hint { font-size: .72rem; color: var(--text-dim); margin-top: .75rem; }
+
     /* ── Main grid ─────────────────────────────────────────────────────── */
     .main { max-width: 1160px; margin: 0 auto; padding: 1.5rem; display: grid; gap: 1.25rem; }
 
@@ -408,6 +442,10 @@
   </div>
 
   <div class="hdr-spacer"></div>
+
+  <span id="user-chip" class="badge hdr-user" hidden></span>
+  <button id="users-btn" class="hdr-btn" hidden onclick="openUsers()" data-i18n="users">Utilisateurs</button>
+  <a id="logout-btn" class="hdr-btn" href="/auth/logout" hidden data-i18n="logout">Déconnexion</a>
 
   <div class="lang-toggle">
     <button class="lang-btn on" onclick="setLang('fr')">FR</button>
@@ -827,6 +865,18 @@
 </div>
 
 <div class="toasts" id="toasts"></div>
+
+<!-- ── Users (admin) ───────────────────────────────────────────────────── -->
+<div id="users-modal" class="modal" hidden onclick="if (event.target === this) closeUsers()">
+  <div class="card modal-card">
+    <div class="card-hdr">
+      <div class="card-title" data-i18n="users_title">Utilisateurs</div>
+      <button class="act-btn" style="padding:3px 10px;font-size:.68rem" onclick="closeUsers()" data-i18n="close">Fermer</button>
+    </div>
+    <div id="users-list"></div>
+    <p class="users-hint" data-i18n="users_hint">Les nouveaux comptes arrivent « En attente » après leur première connexion via Pocket ID : attribuez-leur un rôle pour leur donner accès.</p>
+  </div>
+</div>
 
 <script>
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1278,6 +1328,15 @@ const T = {
     f_onexit:     'On exit',
     f_save:       'Sauvegarder',
     cancel:       'Annuler',
+    users:        'Utilisateurs',
+    users_title:  'Utilisateurs',
+    users_hint:   'Les nouveaux comptes arrivent « En attente » après leur première connexion via Pocket ID : attribuez-leur un rôle pour leur donner accès.',
+    logout:       'Déconnexion',
+    close:        'Fermer',
+    you:          'vous',
+    remove:       'Retirer',
+    confirm_remove:'Retirer ce compte ? Il reviendra « En attente » s\'il se reconnecte.',
+    forbidden:    'Action non autorisée pour votre rôle',
   },
   en: {
     lb_title:     'Front LED Bar',
@@ -1327,6 +1386,15 @@ const T = {
     f_onexit:     'On exit',
     f_save:       'Save',
     cancel:       'Cancel',
+    users:        'Users',
+    users_title:  'Users',
+    users_hint:   'New accounts show up as "Pending" after their first Pocket ID sign-in: give them a role to grant access.',
+    logout:       'Sign out',
+    close:        'Close',
+    you:          'you',
+    remove:       'Remove',
+    confirm_remove:'Remove this account? It comes back as "Pending" if it signs in again.',
+    forbidden:    'Not allowed for your role',
   },
 };
 let lang = 'fr';
@@ -1696,7 +1764,94 @@ function api(method, path, body) {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: body !== undefined ? JSON.stringify(body) : undefined,
-  }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
+  }).then(async r => {
+    if (r.status === 401) {
+      // Session expired or revoked: back through the OIDC login.
+      location.href = '/auth/login?next=' + encodeURIComponent(location.pathname);
+      throw new Error('HTTP 401');
+    }
+    if (r.status === 403 && method !== 'GET') {
+      // Role too low for this action: say so once, and leave the caller's
+      // generic "connection error" handler out of it.
+      toast(T[lang].forbidden, 'error');
+      return new Promise(() => {});
+    }
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      throw new Error(d.error || `HTTP ${r.status}`);
+    }
+    return r.json();
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Account & users (OIDC)
+═══════════════════════════════════════════════════════════════════════════ */
+let _me = null;
+let _roles = [];
+
+function loadMe() {
+  api('GET', '/api/me').then(d => {
+    _me = d.user;
+    _roles = d.roles || [];
+    if (d.auth !== 'oidc' || !_me) return;
+    const label = (_roles.find(r => r.role === _me.role) || {}).label || _me.role;
+    const chip = document.getElementById('user-chip');
+    chip.textContent = `${_me.name} · ${label}`;
+    chip.title = _me.email || _me.name;
+    chip.hidden = false;
+    document.getElementById('logout-btn').hidden = false;
+    document.getElementById('users-btn').hidden = _me.role !== 'admin';
+  }).catch(() => {});
+}
+
+function openUsers() {
+  document.getElementById('users-modal').hidden = false;
+  loadUsers();
+}
+
+function closeUsers() {
+  document.getElementById('users-modal').hidden = true;
+}
+
+function loadUsers() {
+  api('GET', '/api/users').then(d => {
+    _roles = d.roles || _roles;
+    renderUsers(d.users || []);
+  }).catch(e => toast(e.message, 'error'));
+}
+
+function renderUsers(users) {
+  const list = document.getElementById('users-list');
+  list.innerHTML = users.map(u => {
+    const opts = _roles.map(r =>
+      `<option value="${esc(r.role)}"${r.role === u.role ? ' selected' : ''}>${esc(r.label)}</option>`
+    ).join('');
+    const self = _me && u.sub === _me.sub ? ` (${esc(T[lang].you)})` : '';
+    return `
+    <div class="user-row${u.role === 'pending' ? ' pending' : ''}">
+      <div class="user-info">
+        <div class="user-name">${esc(u.name || u.sub)}${self}</div>
+        <div class="user-sub">${esc(u.email || u.sub)}</div>
+      </div>
+      <select class="form-select" style="max-width:160px" data-sub="${esc(u.sub)}"
+        onchange="setUserRole(this.dataset.sub, this.value)">${opts}</select>
+      <button class="act-btn" data-sub="${esc(u.sub)}" onclick="removeUser(this.dataset.sub)">${esc(T[lang].remove)}</button>
+    </div>`;
+  }).join('');
+}
+
+function setUserRole(sub, role) {
+  api('PUT', `/api/users/${encodeURIComponent(sub)}`, { role })
+    .then(() => { toast(T[lang].ok, 'ok'); loadUsers(); })
+    .catch(e => { toast(e.message, 'error'); loadUsers(); });
+}
+
+function removeUser(sub) {
+  if (!confirm(T[lang].confirm_remove)) return;
+  api('DELETE', `/api/users/${encodeURIComponent(sub)}`)
+    .then(() => { toast(T[lang].ok, 'ok'); loadUsers(); })
+    .catch(e => toast(e.message, 'error'));
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1706,7 +1861,7 @@ function toast(msg, type = 'ok') {
   const c  = document.getElementById('toasts');
   const el = document.createElement('div');
   el.className = `toast ${type}`;
-  el.innerHTML = `<div class="t-dot"></div><span>${msg}</span>`;
+  el.innerHTML = `<div class="t-dot"></div><span>${esc(msg)}</span>`;
   c.appendChild(el);
   setTimeout(() => {
     el.style.animation = 't-out .2s ease forwards';
@@ -1724,6 +1879,7 @@ document.head.appendChild(_style);
 
 function init() {
   buildPanel();
+  loadMe();
 
   api('GET', '/api/state')
     .then(data => {

@@ -9,7 +9,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY led_api.py led_dashboard.html ./
+COPY led_api.py auth.py led_dashboard.html ./
 
 ENV DATA_DIR=/app/data
 VOLUME ["/app/data"]

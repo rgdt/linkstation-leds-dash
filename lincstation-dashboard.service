@@ -28,6 +28,10 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
+# OIDC sign-in (see README); the first account to sign in becomes admin
+Environment=OIDC_ISSUER=https://id.example.lan
+Environment=OIDC_CLIENT_ID=
+Environment=PUBLIC_BASE_URL=https://leds.example.lan
 # Uncomment to listen on localhost only (e.g. behind a reverse proxy):
 # Environment=BIND_HOST=127.0.0.1
 
