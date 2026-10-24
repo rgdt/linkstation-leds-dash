@@ -82,8 +82,33 @@ curl -X POST http://localhost:50001/api/strip/nvme1 \
   -d '{"state":"red"}'
 
 # All off
-curl -X POST http://localhost:50001/api/all/off
+curl -X POST http://localhost:50001/api/all/off \
+  -H 'Content-Type: application/json' -d '{}'
 ```
+
+## Security
+
+The API has **no authentication**: anyone who can reach port 50001 can drive the
+LEDs and edit presets/rules. Keep it on a trusted LAN, or set `BIND_HOST=127.0.0.1`
+and put it behind a reverse proxy that adds authentication.
+
+Built-in protections:
+
+- State-changing requests (`POST`/`PUT`/`DELETE`) from another origin are rejected,
+  and `POST`/`PUT` require `Content-Type: application/json` (blocks CSRF from
+  third-party web pages). If you serve the dashboard through a reverse proxy on a
+  different host name, list it in `ALLOWED_ORIGINS` (comma-separated, e.g.
+  `ALLOWED_ORIGINS=https://leds.example.lan`).
+- Preset names, rule labels and animation parameters are validated server-side and
+  escaped in the UI.
+- Only `led_dashboard.html` is served as a static file.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `BIND_HOST` | `0.0.0.0` | Listen address |
+| `ALLOWED_ORIGINS` | *(empty)* | Extra origins allowed to call the API |
+| `I2C_BUS` | auto-detect | I2C bus number |
+| `DATA_DIR` | app directory | Where presets/rules are stored |
 
 ## Extension points
 

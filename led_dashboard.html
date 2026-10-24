@@ -502,7 +502,7 @@
 
       <!-- Save current state -->
       <div class="preset-save">
-        <input type="text" id="preset-name" class="preset-input"
+        <input type="text" id="preset-name" class="preset-input" maxlength="64"
           data-i18n-placeholder="preset_ph" placeholder="Nom du preset…"
           onkeydown="if(event.key==='Enter') savePreset()">
         <button class="act-btn primary" onclick="savePreset()" data-i18n="save">Sauvegarder</button>
@@ -787,7 +787,7 @@
     <div class="binding-form" id="binding-form" style="display:none">
       <div class="form-row">
         <span class="form-lbl" data-i18n="f_label">Label</span>
-        <input type="text" class="form-input" id="f-label" placeholder="ex: CPU fort">
+        <input type="text" class="form-input" id="f-label" maxlength="64" placeholder="ex: CPU fort">
       </div>
       <div class="form-row">
         <span class="form-lbl" data-i18n="f_event">Événement</span>
@@ -904,6 +904,13 @@ function loadBindings() {
   }).catch(() => {});
 }
 
+// Escape server-provided text before inserting it with innerHTML.
+function esc(v) {
+  return String(v ?? '').replace(/[&<>"'`]/g, c => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;', '`':'&#96;',
+  })[c]);
+}
+
 function renderBindings() {
   const list = document.getElementById('binding-list');
   if (!_bindings.length) {
@@ -914,17 +921,18 @@ function renderBindings() {
     const label   = b.label || `${b.event} → ${b.animation}`;
     const targets = b.targets.length === Object.keys(_autoMeta.strips).length
       ? 'all' : b.targets.join(',');
+    const id = esc(b.id);
     return `
-    <div class="binding-row${b.enabled ? '' : ' disabled'}" id="br-${b.id}">
+    <div class="binding-row${b.enabled ? '' : ' disabled'}" id="br-${id}">
       <div class="binding-toggle${b.enabled ? ' on' : ''}"
-        onclick="toggleBinding('${b.id}')"></div>
+        data-id="${id}" onclick="toggleBinding(this.dataset.id)"></div>
       <div class="binding-info">
-        <div class="binding-main">${label}</div>
-        <div class="binding-sub">${b.animation} · [${targets}]</div>
+        <div class="binding-main">${esc(label)}</div>
+        <div class="binding-sub">${esc(b.animation)} · [${esc(targets)}]</div>
       </div>
-      <span class="prio-badge">p${b.priority}</span>
-      <button class="binding-edit" onclick="showBindingForm('${b.id}')">✎</button>
-      <button class="binding-del"  onclick="deleteBinding('${b.id}')">✕</button>
+      <span class="prio-badge">p${esc(b.priority)}</span>
+      <button class="binding-edit" data-id="${id}" onclick="showBindingForm(this.dataset.id)">✎</button>
+      <button class="binding-del"  data-id="${id}" onclick="deleteBinding(this.dataset.id)">✕</button>
     </div>`;
   }).join('');
 }
@@ -987,14 +995,14 @@ function renderParamInputs() {
     const id  = `fp-${key}`;
 
     if (def.type === 'select') {
-      const opts = def.opts.map(o => `<option value="${o}"${o==val?' selected':''}>${o}</option>`).join('');
+      const opts = def.opts.map(o => `<option value="${esc(o)}"${o==val?' selected':''}>${esc(o)}</option>`).join('');
       return `<div class="form-row">
         <span class="form-lbl">${def.label}</span>
         <select class="form-select" id="${id}" style="max-width:120px">${opts}</select>
       </div>`;
     }
     if (def.type === 'rgb_array') {
-      const hexVal = Array.isArray(val) ? rgb2hex(val) : (val || '#00c8ff');
+      const hexVal = esc(Array.isArray(val) ? rgb2hex(val) : (val || '#00c8ff'));
       return `<div class="form-row">
         <span class="form-lbl">${def.label}</span>
         <div class="cp-wrap"><input type="color" id="${id}" value="${hexVal}"
@@ -1007,9 +1015,9 @@ function renderParamInputs() {
     return `<div class="form-row">
       <span class="form-lbl">${def.label}</span>
       <input type="range" class="thr-slider" id="${id}"
-        min="${def.min}" max="${def.max}" step="${def.step}" value="${val}"
+        min="${def.min}" max="${def.max}" step="${def.step}" value="${esc(val)}"
         oninput="document.getElementById('${id}-v').textContent=this.value+'${suf}'" style="flex:1">
-      <span class="thr-val" id="${id}-v">${val}${suf}</span>
+      <span class="thr-val" id="${id}-v">${esc(val)}${suf}</span>
     </div>`;
   }).join('');
 }
@@ -1024,7 +1032,7 @@ function renderOnExitExtra() {
     </select>`;
   } else if (type === 'preset') {
     area.style.display = 'block';
-    const opts = _presets.map(n => `<option value="${n}">${n}</option>`).join('');
+    const opts = _presets.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
     area.innerHTML = `<select class="form-select" id="foe-preset">${opts || '<option>—</option>'}</select>`;
   } else {
     area.style.display = 'none';
@@ -1035,10 +1043,10 @@ function renderOnExitExtra() {
 function populateFormSelects() {
   // Events
   const fe = document.getElementById('f-event');
-  fe.innerHTML = _autoMeta.events.map(e => `<option value="${e}">${e}</option>`).join('');
+  fe.innerHTML = _autoMeta.events.map(e => `<option value="${esc(e)}">${esc(e)}</option>`).join('');
   // Animations
   const fa = document.getElementById('f-anim');
-  fa.innerHTML = Object.keys(_autoMeta.animations).map(a => `<option value="${a}">${a}</option>`).join('');
+  fa.innerHTML = Object.keys(_autoMeta.animations).map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('');
   // Strips
   const fs = document.getElementById('f-strips');
   fs.innerHTML = (_autoMeta.strips || []).map(s =>
@@ -1170,7 +1178,7 @@ function updateAutoStatus(data) {
     return;
   }
   list.innerHTML = active.map(a =>
-    `<span class="active-tag">${a.animation} · ${a.targets.join(',')}</span>`
+    `<span class="active-tag">${esc(a.animation)} · ${esc(a.targets.join(','))}</span>`
   ).join('');
 }
 
@@ -1587,7 +1595,7 @@ function applyStatus(data) {
     if (sys.disks.length) {
       dl.innerHTML = sys.disks.slice(0,8).map(d => `
         <div class="disk-row">
-          <span class="disk-mp" title="${d.device}">${d.mountpoint}</span>
+          <span class="disk-mp" title="${esc(d.device)}">${esc(d.mountpoint)}</span>
           <div class="bar"><div class="bar-fill ${barClass(d.percent)}" style="width:${d.percent}%"></div></div>
           <span class="sys-val" style="font-size:.62rem">${d.percent}%</span>
         </div>`).join('');
@@ -1632,10 +1640,10 @@ function renderPresets() {
   }
   list.innerHTML = _presets.map(name => `
     <div class="preset-item">
-      <button class="preset-apply" onclick="applyPreset('${name.replace(/'/g,"\\'")}')">
-        ${name}
+      <button class="preset-apply" data-name="${esc(name)}" onclick="applyPreset(this.dataset.name)">
+        ${esc(name)}
       </button>
-      <button class="preset-del" onclick="deletePreset('${name.replace(/'/g,"\\'")}')">✕</button>
+      <button class="preset-del" data-name="${esc(name)}" onclick="deletePreset(this.dataset.name)">✕</button>
     </div>`).join('');
 }
 
